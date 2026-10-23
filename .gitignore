@@ -1,0 +1,12 @@
+/build/
+/dist/
+/app/
+/symbols/
+/Data/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.log
+.vs/

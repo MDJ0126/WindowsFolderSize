@@ -1,0 +1,6 @@
+LIBRARY WindowsFolderSizeHook
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
+    WindowsFolderSizeInitialize
+    WindowsFolderSizeHookStatus
