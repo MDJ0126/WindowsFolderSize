@@ -9,7 +9,15 @@
 
 A small native extension that adds folder sizes to **File Explorer's existing Size column**. No separate disk browser, no Windhawk, no Everything dependency.
 
+## In File Explorer
+
+Folder totals appear directly in the existing **Size** column alongside normal file sizes.
+
+<p align="center"><img src="docs/explorer-folder-sizes.png" width="600" alt="File Explorer showing calculated folder sizes in its standard Size column"></p>
+
 ## Download
+
+> **Download temporarily paused:** Microsoft Defender flagged the 1.0.0 installer. The detection is under investigation; a false positive has not been established. Do not disable antivirus protection or add an exclusion.
 
 **[Download the latest installer](https://github.com/MDJ0126/WindowsFolderSize/releases/latest)** and run `WindowsFolderSizeSetup-1.0.0-x64.exe`.
 
