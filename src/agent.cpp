@@ -84,6 +84,18 @@ void pipeWorker(){
 }
 bool symbolsValid(){DWORD stamp,size;if(!imageIdentity(storagePath(),stamp,size))return false;auto ini=dataDirectory()+L"\\hooks.ini";return GetPrivateProfileIntW(L"Symbols",L"TimeStamp",0,ini.c_str())==stamp&&GetPrivateProfileIntW(L"Symbols",L"ImageSize",0,ini.c_str())==size&&GetPrivateProfileIntW(L"Symbols",L"GetSize",0,ini.c_str())&&GetPrivateProfileIntW(L"Symbols",L"GetItemProperty",0,ini.c_str())&&GetPrivateProfileIntW(L"Symbols",L"ItemGetValue",0,ini.c_str());}
 bool resolveSymbols(){if(symbolsValid())return true;log(L"Preparing symbols for this Windows version");auto exe=directory()+L"\\Symbols\\WindowsFolderSizeSymbols.exe";std::wstring cmd=L"\""+exe+L"\"";STARTUPINFOW si{sizeof(si)};PROCESS_INFORMATION pi{};if(!CreateProcessW(exe.c_str(),cmd.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi))return false;WaitForSingleObject(pi.hProcess,180000);DWORD code;GetExitCodeProcess(pi.hProcess,&code);CloseHandle(pi.hThread);CloseHandle(pi.hProcess);return code==0&&symbolsValid();}
+LRESULT CALLBACK lifecycleWindow(HWND window,UINT message,WPARAM value,LPARAM data){
+    if(message==WM_QUERYENDSESSION)return TRUE;
+    if(message==WM_CLOSE||(message==WM_ENDSESSION&&value)){stopping=true;cv.notify_all();return 0;}
+    return DefWindowProcW(window,message,value,data);
+}
+DWORD WINAPI lifecycleMessages(void*){
+    WNDCLASSW wc{};wc.lpfnWndProc=lifecycleWindow;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=L"WindowsFolderSize.Lifecycle";RegisterClassW(&wc);
+    // An invisible top-level window allows Windows Restart Manager to ask
+    // the broker to close normally. It never steals focus or shows UI.
+    CreateWindowW(wc.lpszClassName,L"WindowsFolderSize",WS_OVERLAPPED,0,0,0,0,nullptr,nullptr,wc.hInstance,nullptr);
+    MSG message;while(GetMessageW(&message,nullptr,0,0)>0){TranslateMessage(&message);DispatchMessageW(&message);}return 0;
+}
 int wmain(int argc,wchar_t**argv){
     if(argc>2&&wcscmp(argv[1],L"--scan")==0){auto r=scan(argv[2],stopping);printf("{\"complete\":%s,\"bytes\":%llu,\"files\":%llu,\"directories\":%llu,\"error\":%lu}\n",r.complete?"true":"false",r.bytes,r.files,r.directories,r.error);return r.complete?0:1;}
     if(argc>1&&wcscmp(argv[1],L"--resolve")==0)return resolveSymbols()?0:1;
@@ -94,6 +106,7 @@ int wmain(int argc,wchar_t**argv){
     HANDLE stopEvent=CreateEventW(nullptr,TRUE,FALSE,eventName.c_str());
     DWORD session;ProcessIdToSessionId(GetCurrentProcessId(),&session);auto mutexName=std::wstring(L"Local\\WindowsFolderSize.Agent.")+(isolated?L"Test.":L"")+std::to_wstring(session);HANDLE mutex=CreateMutexW(nullptr,FALSE,mutexName.c_str());if(!mutex||GetLastError()==ERROR_ALREADY_EXISTS)return 0;
     if(!resolveSymbols()){log(L"Required symbols missing. No Explorer changes made.");CloseHandle(mutex);return 1;}
+    RegisterApplicationRestart(L"",RESTART_NO_CRASH|RESTART_NO_HANG);HANDLE lifecycle=CreateThread(nullptr,0,lifecycleMessages,nullptr,0,nullptr);if(lifecycle)CloseHandle(lifecycle);
     log(L"WindowsFolderSize started");std::thread worker(scannerWorker),server(pipeWorker);
     while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed()){e.changed=true;e.lastChange=now;}
         // Collapse bursts of writes into a single refresh. For continuously

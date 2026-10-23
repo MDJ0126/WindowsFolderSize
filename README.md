@@ -2,7 +2,7 @@
 <h1 align="center">WindowsFolderSize</h1>
 <p align="center">Folder sizes, right where you need them.</p>
 <p align="center">
-  <a href="https://github.com/MDJ0126/WindowsFolderSize/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/MDJ0126/WindowsFolderSize?color=125be8"></a>
+  <a href="docs/security-validation.md"><img alt="1.0.1 candidate" src="https://img.shields.io/badge/version-1.0.1%20candidate-125be8"></a>
   <img alt="Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-125be8">
   <a href="LICENSE"><img alt="GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-64748b"></a>
 </p>
@@ -17,18 +17,18 @@ Folder totals appear directly in the existing **Size** column alongside normal f
 
 ## Download
 
-> **Download temporarily paused:** Microsoft Defender flagged the 1.0.0 installer. The detection is under investigation; a false positive has not been established. Do not disable antivirus protection or add an exclusion.
+> **1.0.0 download paused:** Defender flagged the old self-extracting installer. A standard Windows Installer **1.0.1 MSI candidate** now passes local Defender scans and automated regression checks. It remains unpublished while production-scope and on-screen acceptance checks are pending. See [security validation](docs/security-validation.md). Do not disable protection or allowlist 1.0.0.
 
-**[Download the latest installer](https://github.com/MDJ0126/WindowsFolderSize/releases/latest)** and run `WindowsFolderSizeSetup-1.0.0-x64.exe`.
+Published downloads are temporarily held. The candidate is built as `dist\WindowsFolderSize-1.0.1-x64.msi`.
 
 1. Run the installer and approve extension registration when Windows asks.
 2. Follow the progress inside the setup window.
-3. Choose **Restart Explorer** to apply immediately, or **Later** to apply at your next sign-in. Restarting Explorer closes its open windows.
+3. On the final setup screen, optionally select **Restart File Explorer now**, then click **Finish**. Leave it unchecked to apply at your next sign-in. Restarting Explorer closes its open windows.
 4. Open a local folder in **Details** view with the **Size** column enabled.
 
 The application starts automatically when you sign in. There is no main window to keep open.
 
-<p align="center"><img src="docs/setup.png" width="560" alt="WindowsFolderSize setup with restart choice"></p>
+
 
 ## What you get
 
@@ -52,23 +52,25 @@ The application starts automatically when you sign in. There is no main window t
 
 ## Installation and removal
 
-Files are installed to `%LOCALAPPDATA%\WindowsFolderSize`. The background startup entry belongs to the current user; Explorer extension registration requires administrator approval.
+The MSI installs executable code to `%ProgramFiles%\WindowsFolderSize` and uses machine-wide extension/startup registration. Installation requires administrator approval. Mutable logs and symbols stay under `%LOCALAPPDATA%\WindowsFolderSize\Data` for each user.
 
-Remove **WindowsFolderSize** from **Settings → Apps → Installed apps**, or run the installed setup with `--uninstall`. Files still loaded by Explorer are cleaned up at the next sign-in.
+Remove **WindowsFolderSize** from **Settings → Apps → Installed apps**. Windows Installer manages uninstall/rollback and uses Restart Manager for files still in use; it may request that applications close or that Windows restart. No standalone custom uninstaller or RunOnce deletion script is installed.
 
 If you used the earlier private **FolderSize** prototype, uninstall it before installing this public version.
 
 ## Build from source
 
-Requirements: Visual Studio 2022 with **Desktop development with C++**, a Windows SDK, and the SDK's **Debugging Tools for Windows** component. The current script uses the Visual Studio 2022 Community installation path; adjust it for another edition.
+Requirements: Visual Studio 2022 with **Desktop development with C++**, a Windows SDK, the SDK's **Debugging Tools for Windows** component, and **WiX 6.0.2** with `WixToolset.UI.wixext/6.0.2`. The current script uses the Visual Studio 2022 Community installation path; adjust it for another edition.
 
 ```bat
+dotnet tool install --global wix --version 6.0.2
+wix extension add -g WixToolset.UI.wixext/6.0.2
 build.cmd
 ```
 
-The installer is written to `dist\WindowsFolderSizeSetup.exe`. Version 1.0.0 is embedded in the executable resources. The project uses the static C++ runtime.
+The MSI is written to `dist\WindowsFolderSize-1.0.1-x64.msi`. Version 1.0.1 is embedded in the executable and MSI metadata. The project uses the static C++ runtime.
 
-The source includes tests for resumable scans, progress formatting through the native shell property APIs, change detection and installer controls. `scripts\test.cmd` runs them in a separate test namespace; it does not restart Explorer or install the application.
+The source includes tests for resumable scans, progress formatting through the native shell property APIs, change detection. Installer validation and lifecycle results are documented separately in [security validation](docs/security-validation.md). `scripts\test.cmd` runs them in a separate test namespace; it does not restart Explorer or install the application.
 
 ## How it works
 

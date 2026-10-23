@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstdint>
 #include <cstdio>
+#include <shlobj.h>
 
 namespace fsizes {
 constexpr uint32_t magic = 0x46535A31;
@@ -39,11 +40,13 @@ inline std::wstring directory() {
     std::wstring p(b,n); return p.substr(0,p.find_last_of(L"\\/"));
 }
 inline std::wstring dataDirectory() {
-    HMODULE own=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&dataDirectory),&own);
-    wchar_t p[32768];DWORD n=GetModuleFileNameW(own,p,32768);std::wstring root(p,n);root=root.substr(0,root.find_last_of(L"\\/"));
-    if(root.size()>8&&_wcsicmp(root.substr(root.size()-8).c_str(),L"\\Symbols")==0)root=root.substr(0,root.size()-8);
-    std::wstring result=root+L"\\Data";
-    CreateDirectoryW(result.c_str(),nullptr); return result;
+    // Program Files is read-only to the broker. Keep mutable symbols/logs
+    // in the invoking user's known Local AppData folder, never beside code.
+    PWSTR known=nullptr;
+    if(FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&known)))return L"";
+    std::wstring root=std::wstring(known)+L"\\WindowsFolderSize";CoTaskMemFree(known);
+    wchar_t test[2];if(GetEnvironmentVariableW(L"FOLDERSIZE_TEST",test,2)>0)root+=L"-Tests";
+    CreateDirectoryW(root.c_str(),nullptr);auto data=root+L"\\Data";CreateDirectoryW(data.c_str(),nullptr);return data;
 }
 inline std::wstring sessionPipe() {
     DWORD session=0; ProcessIdToSessionId(GetCurrentProcessId(),&session);
@@ -51,7 +54,7 @@ inline std::wstring sessionPipe() {
     return std::wstring(pipeName)+(isolated?L"Test-":L"")+std::to_wstring(session);
 }
 inline void log(const wchar_t* message) {
-    auto path=dataDirectory()+L"\\WindowsFolderSize.log";
+    auto data=dataDirectory();if(data.empty())return;auto path=data+L"\\WindowsFolderSize.log";
     HANDLE h=CreateFileW(path.c_str(),FILE_APPEND_DATA,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(h==INVALID_HANDLE_VALUE)return;
     if(GetFileSize(h,nullptr)>1024*1024){CloseHandle(h);return;}

@@ -4,8 +4,6 @@ cd /d "%~dp0.."
 set FOLDERSIZE_TEST=1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\prepare-tests.ps1
 if errorlevel 1 exit /b 1
-dist\WindowsFolderSizeSetup.exe --self-test --silent
-if errorlevel 1 exit /b 1
 dist\WindowsFolderSizeProgressTest.exe "%CD%\build\scan-fixture"
 if errorlevel 1 exit /b 1
 start /b "" dist\WindowsFolderSize.exe
