@@ -1,0 +1,17 @@
+#include "common.hpp"
+#include "cache_disk.hpp"
+#include <filesystem>
+using namespace fsizes;
+bool query(const std::wstring& path,Response& r){Request q;q.characters=uint32_t(path.size());std::vector<BYTE>d(sizeof(q)+path.size()*2);memcpy(d.data(),&q,sizeof(q));memcpy(d.data()+sizeof(q),path.data(),path.size()*2);DWORD n=0;return CallNamedPipeW(sessionPipe().c_str(),d.data(),DWORD(d.size()),&r,sizeof(r),&n,1000)&&n==sizeof(r);}
+HANDLE launch(const wchar_t* args){auto exe=directory()+L"\\bin\\WindowsFolderSize.exe";auto command=L"\""+exe+L"\" "+args;STARTUPINFOW si{sizeof(si)};PROCESS_INFORMATION pi{};if(!CreateProcessW(exe.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi))return nullptr;CloseHandle(pi.hThread);return pi.hProcess;}
+void stop(HANDLE broker){HANDLE p=launch(L"--stop");if(p){WaitForSingleObject(p,3000);CloseHandle(p);}WaitForSingleObject(broker,5000);CloseHandle(broker);}
+unsigned fullCount(){auto path=dataDirectory()+L"\\WindowsFolderSize.log";HANDLE h=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,0,nullptr);if(h==INVALID_HANDLE_VALUE)return 0;DWORD size=GetFileSize(h,nullptr),n=0;std::wstring text(size/2,L'\0');ReadFile(h,text.data(),size,&n,nullptr);CloseHandle(h);unsigned count=0;size_t at=0;while((at=text.find(L"Full folder enumeration started",at))!=std::wstring::npos){count++;at++;}return count;}
+int wmain(){SetEnvironmentVariableW(L"FOLDERSIZE_TEST",L"1");auto root=directory()+L"\\delta-fixture-"+std::to_wstring(GetCurrentProcessId());auto outside=root+L"-outside";std::filesystem::create_directory(root);std::filesystem::create_directory(root+L"\\nested");std::filesystem::create_directory(outside);auto write=[&](const std::wstring& path,unsigned bytes){HANDLE h=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,CREATE_ALWAYS,0,nullptr);std::vector<char>d(bytes);DWORD n;WriteFile(h,d.data(),bytes,&n,nullptr);CloseHandle(h);};write(root+L"\\a.bin",10);write(root+L"\\nested\\b.bin",20);write(root+L"\\c.bin",7);write(outside+L"\\payload.bin",77);HANDLE broker=launch(L"");if(!broker)return 2;auto expect=[&](uint64_t bytes){Response r;for(unsigned i=0;i<100;i++){if(query(root,r)&&r.ready&&r.bytes==bytes)return true;Sleep(100);}printf("Expected bytes=%llu got=%llu\n",bytes,r.bytes);return false;};if(!expect(37)){stop(broker);return 3;}auto full=fullCount();
+write(root+L"\\a.bin",25);if(!expect(52)){stop(broker);return 4;}
+write(root+L"\\d.bin",9);if(!expect(61)){stop(broker);return 5;}
+std::filesystem::remove(root+L"\\nested\\b.bin");if(!expect(41)){stop(broker);return 6;}
+std::filesystem::rename(root+L"\\a.bin",root+L"\\z.bin");Sleep(1300);if(!expect(41)){stop(broker);return 7;}
+std::filesystem::rename(outside,root+L"\\moved");if(!expect(118)){stop(broker);return 8;}
+std::filesystem::rename(root+L"\\moved",root+L"\\renamed");Sleep(1300);if(!expect(118)){stop(broker);return 9;}
+std::filesystem::remove(root+L"\\renamed\\payload.bin");std::filesystem::remove(root+L"\\renamed");if(!expect(41)){stop(broker);return 10;}
+auto after=fullCount();stop(broker);for(auto name:{L"z.bin",L"c.bin",L"d.bin"})std::filesystem::remove(root+L"\\"+name);std::filesystem::remove(root+L"\\nested");std::filesystem::remove(root);printf("Full root enumerations before changes=%u after=%u\n",full,after);if(full!=after)return 11;puts("PASS file grow/add/delete/rename and subtree move/rename/delete: exact totals; no root re-enumeration");return 0;}

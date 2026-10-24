@@ -2,6 +2,7 @@
 #include "scanner.hpp"
 #include "cpu_budget.hpp"
 #include "cache_disk.hpp"
+#include "file_delta.hpp"
 #include <shlobj.h>
 #include <sddl.h>
 #include <mutex>
@@ -22,9 +23,9 @@ struct Watch {
         if(directory!=INVALID_HANDLE_VALUE){ov.hEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);if(!ov.hEvent||!arm()){CloseHandle(directory);directory=INVALID_HANDLE_VALUE;}}
     }
     ~Watch(){if(directory!=INVALID_HANDLE_VALUE){CancelIoEx(directory,&ov);DWORD ignored;GetOverlappedResult(directory,&ov,&ignored,TRUE);CloseHandle(directory);}if(ov.hEvent)CloseHandle(ov.hEvent);}
-    bool changed(){if(directory==INVALID_HANDLE_VALUE||WaitForSingleObject(ov.hEvent,0)!=WAIT_OBJECT_0)return false;DWORD n;GetOverlappedResult(directory,&ov,&n,FALSE);arm();return true;}
+    bool changed(std::map<std::wstring,DWORD>& changes,bool& overflow){if(directory==INVALID_HANDLE_VALUE||WaitForSingleObject(ov.hEvent,0)!=WAIT_OBJECT_0)return false;DWORD n=0;if(!GetOverlappedResult(directory,&ov,&n,FALSE)||n==0)overflow=true;else{DWORD offset=0;for(;;){if(offset+sizeof(DWORD)*3>n){overflow=true;break;}auto item=reinterpret_cast<FILE_NOTIFY_INFORMATION*>(buffer+offset);if(offset+12+item->FileNameLength>n){overflow=true;break;}std::wstring name(item->FileName,item->FileNameLength/2);auto found=changes.find(name);if(found==changes.end()||item->Action!=FILE_ACTION_MODIFIED)changes[name]=item->Action;if(!item->NextEntryOffset)break;offset+=item->NextEntryOffset;if(offset>=n){overflow=true;break;}}}arm();return true;}
 };
-struct Entry {std::wstring path;uint64_t bytes=0;ULONGLONG used=0,finished=0,lastChange=0,lastAnimation=0;unsigned percent=0;DWORD error=0;bool ready=false,queued=false,running=false,changed=false;std::unique_ptr<Watch> watch;};
+struct Entry {std::wstring path;uint64_t bytes=0;ULONGLONG used=0,finished=0,lastChange=0,lastAnimation=0;unsigned percent=0;DWORD error=0;bool ready=false,queued=false,running=false,changed=false;std::unique_ptr<Watch> watch;FileSizes files;bool indexed=false,overflow=false;std::map<std::wstring,DWORD> changes;};
 SavedSizes savedSizes;std::atomic<bool> diskDirty=false;
 std::mutex cacheMutex;std::condition_variable cv;std::map<std::wstring,Entry> cache;std::deque<std::wstring> pending;
 std::wstring normalized(std::wstring p){while(p.size()>3&&p.back()==L'\\')p.pop_back();CharLowerBuffW(p.data(),DWORD(p.size()));return p;}
@@ -33,19 +34,19 @@ void queue(const std::wstring& key,Entry& e){if(!e.queued&&!e.running){e.queued=
 void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
 void scannerWorker(){
     SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
-    struct Running {std::wstring key,path;std::unique_ptr<ScanJob> scan;ULONGLONG lastNotify=0;unsigned lastPercent=101;};
+    struct Running {std::wstring key,path;std::unique_ptr<ScanJob> scan;FileSizes files;ULONGLONG lastNotify=0;unsigned lastPercent=101;};
     std::deque<std::unique_ptr<Running>> active;
     while(!stopping){
         // Admit all newly requested folders before the next short work slice.
         std::vector<std::pair<std::wstring,std::wstring>> incoming;
         {std::unique_lock lock(cacheMutex);if(active.empty())cv.wait(lock,[]{return stopping||!pending.empty();});if(stopping)break;
-            while(!pending.empty()){auto key=std::move(pending.front());pending.pop_front();auto it=cache.find(key);if(it==cache.end())continue;auto& e=it->second;e.queued=false;e.running=true;e.changed=false;incoming.emplace_back(key,e.path);}}
+            while(!pending.empty()){auto key=std::move(pending.front());pending.pop_front();auto it=cache.find(key);if(it==cache.end())continue;auto& e=it->second;e.queued=false;e.running=true;e.changed=false;if(e.ready&&e.indexed&&!e.overflow&&!e.changes.empty()){FileSizes files=std::move(e.files);auto changes=std::move(e.changes);auto bytes=e.bytes;auto path=e.path;lock.unlock();bool ok=true;for(const auto& change:changes)if(!updateFileDelta(files,bytes,fileKey(path+L"\\"+change.first),change.second,stopping)){ok=false;break;}lock.lock();auto found=cache.find(key);if(found!=cache.end()){auto& updated=found->second;updated.running=false;updated.files=std::move(files);if(ok){updated.bytes=bytes;updated.finished=GetTickCount64();savedSizes[key]=bytes;diskDirty=true;log(L"Incremental file deltas applied; no root enumeration");}else{updated.overflow=true;queue(key,updated);}lock.unlock();notify(path);lock.lock();}continue;}e.overflow=false;e.changes.clear();incoming.emplace_back(key,e.path);}}
         for(auto& request:incoming){
             auto job=std::make_unique<Running>();job->key=std::move(request.first);job->path=std::move(request.second);auto ptr=job.get();
-            job->scan=std::make_unique<ScanJob>(job->path,stopping,[ptr](unsigned percent,uint64_t){
+            log(L"Full folder enumeration started");job->scan=std::make_unique<ScanJob>(job->path,stopping,[ptr](unsigned percent,uint64_t){
                 {std::lock_guard lock(cacheMutex);auto it=cache.find(ptr->key);if(it!=cache.end())it->second.percent=(std::min)(percent,99u);}
                 auto now=GetTickCount64();if(percent!=ptr->lastPercent&&(now-ptr->lastNotify>=1000||ptr->lastNotify==0)){notify(ptr->path);ptr->lastNotify=now;ptr->lastPercent=percent;}
-            });active.push_back(std::move(job));
+            },[ptr](const std::wstring& path,uint64_t bytes){ptr->files[fileKey(path)]=bytes;});active.push_back(std::move(job));
         }
         if(active.empty())continue;auto job=std::move(active.front());active.pop_front();
         bool finished=job->scan->step(512,8);if(!finished){active.push_back(std::move(job));continue;}
@@ -54,7 +55,7 @@ void scannerWorker(){
             // Retain the last completed snapshot during background refreshes.
             // Changes during enumeration request another pass after debounce;
             // they must not throw away a successfully calculated size.
-            if(result.complete){e.bytes=result.bytes;e.ready=true;e.percent=100;savedSizes[job->key]=e.bytes;while(savedSizes.size()>4096)savedSizes.erase(savedSizes.begin());diskDirty=true;}}
+            if(result.complete){e.bytes=result.bytes;e.files=std::move(job->files);e.indexed=true;e.ready=true;e.percent=100;savedSizes[job->key]=e.bytes;while(savedSizes.size()>4096)savedSizes.erase(savedSizes.begin());diskDirty=true;}}
         notify(job->path);
         if(!result.complete){wchar_t message[200];swprintf_s(message,L"Folder calculation unavailable (Win32 error %lu)",result.error);log(message);}
     }
@@ -116,10 +117,10 @@ int wmain(int argc,wchar_t**argv){
     ULONGLONG lastSave=GetTickCount64();
     RegisterApplicationRestart(L"",RESTART_NO_CRASH|RESTART_NO_HANG);HANDLE lifecycle=CreateThread(nullptr,0,lifecycleMessages,nullptr,0,nullptr);if(lifecycle)CloseHandle(lifecycle);
     log(L"WindowsFolderSize started");std::thread worker(scannerWorker),server(pipeWorker);
-    while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed()){e.changed=true;e.lastChange=now;}
+    while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed(e.changes,e.overflow)){e.changed=true;e.lastChange=now;}
         // Collapse bursts of writes into a single refresh. For continuously
         // changing folders, refresh at most once every ten seconds.
-        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=60000))queue(it->first,e);
+        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=1000))queue(it->first,e);
         if(!e.ready&&(e.queued||e.running)&&now-e.lastAnimation>=600){e.lastAnimation=now;animated.push_back(e.path);}
         ++it;}}if(diskDirty&&GetTickCount64()-lastSave>=2000){SavedSizes snapshot;{std::lock_guard lock(cacheMutex);diskDirty=false;snapshot=savedSizes;}if(!saveSizes(cacheFile,snapshot))diskDirty=true;lastSave=GetTickCount64();}for(auto& path:animated)notify(path);if(WaitForSingleObject(stopEvent,200)==WAIT_OBJECT_0)stopping=true;}
     // Exit terminates the blocked pipe listener after the scanner has stopped.

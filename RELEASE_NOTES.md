@@ -1,3 +1,11 @@
+# 1.0.7
+
+- Index individual file sizes during the initial enumeration. Apply old/new byte deltas for file growth, addition, deletion and rename notifications.
+- For a newly added or moved-in directory, enumerate only that subtree. Remove deleted subtrees directly from the index.
+- Coalesce notifications, retain completed totals, persist updated totals atomically, and retain the 2% broker CPU hard cap.
+- Recover with full validation if notifications overflow or file metadata cannot be read. After process restart the file index is rebuilt while the saved total remains visible; offline journal replay is not implemented.
+- Actual broker regression: growth/add/delete/file rename/subtree move/rename/delete all matched expected bytes; full root enumeration counter stayed 1 -> 1.
+
 # 1.0.6
 
 - Persist completed folder sizes atomically in the current user's Local AppData cache file.

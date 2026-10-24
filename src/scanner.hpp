@@ -24,13 +24,14 @@ class ScanJob {
     double completedWeight=0;
     const std::atomic<bool>& stopping;
     ProgressCallback progress;
+    std::function<void(const std::wstring&,uint64_t)> observe;
     ScanResult result;
     bool finished=false;
     void report(){if(progress)progress((std::min)(99u,unsigned(completedWeight*100)),result.files);}
     void fail(DWORD error){result.error=error;finished=true;if(find!=INVALID_HANDLE_VALUE){FindClose(find);find=INVALID_HANDLE_VALUE;}}
     void finishDirectory(){double share=current.weight/double(children.size()+1);completedWeight+=share;for(auto& child:children)stack.push_back({std::move(child),share});children.clear();report();}
 public:
-    ScanJob(const std::wstring& root,const std::atomic<bool>& stop,ProgressCallback callback={}):stopping(stop),progress(std::move(callback)){
+    ScanJob(const std::wstring& root,const std::atomic<bool>& stop,ProgressCallback callback={},std::function<void(const std::wstring&,uint64_t)> observer={}):stopping(stop),progress(std::move(callback)),observe(std::move(observer)){
         if(progress)progress(0,0);DWORD attrs=GetFileAttributesW(longPath(root).c_str());
         if(attrs==INVALID_FILE_ATTRIBUTES){fail(GetLastError());return;}
         if(!(attrs&FILE_ATTRIBUTE_DIRECTORY)){fail(ERROR_DIRECTORY);return;}
@@ -52,7 +53,7 @@ public:
             }
             if(!(data.cFileName[0]==L'.'&&(data.cFileName[1]==0||(data.cFileName[1]==L'.'&&data.cFileName[2]==0)))){
                 if(data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY){if(!(data.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT))children.push_back(current.path+L"\\"+data.cFileName);}
-                else{result.bytes+=(uint64_t(data.nFileSizeHigh)<<32)|data.nFileSizeLow;++result.files;}
+                else{uint64_t bytes=(uint64_t(data.nFileSizeHigh)<<32)|data.nFileSizeLow;result.bytes+=bytes;++result.files;if(observe)observe(current.path+L"\\"+data.cFileName,bytes);}
             }
             if(!FindNextFileW(find,&data)){DWORD e=GetLastError();FindClose(find);find=INVALID_HANDLE_VALUE;if(e!=ERROR_NO_MORE_FILES){fail(e);break;}finishDirectory();}
             if(++processed>=entries||GetTickCount64()-start>=milliseconds)break;
