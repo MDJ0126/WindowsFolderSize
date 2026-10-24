@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.4" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
+  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.6" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of WindowsFolderSize is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Property Id="ARPCOMMENTS" Value="Displays folder sizes in File Explorer's Size column." />

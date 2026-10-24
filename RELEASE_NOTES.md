@@ -1,3 +1,11 @@
+# 1.0.6
+
+- Persist completed folder sizes atomically in the current user's Local AppData cache file.
+- Restore the previous size immediately on the first request after restart; validate in the background to catch changes while the broker was offline.
+- Recalculate watched folders when they change. This version does not implement per-file delta accounting or offline USN replay; a changed or restored folder is re-enumerated.
+- Raise the broker hard CPU cap to 2% and remove the additional 30 ms pause. Same 367-file sample: previous policy 469 ms, new policy 15 ms; this small cached sample is not a general speed guarantee.
+- Restart/offline edit regression passed: saved 42 bytes restored immediately, then updated to 99 bytes.
+
 # 1.0.4
 
 - Enforce a 1% system CPU hard cap for the broker using Windows Job Objects; stop rather than silently run uncapped if enforcement fails.
