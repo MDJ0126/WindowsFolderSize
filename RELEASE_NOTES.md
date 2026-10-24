@@ -1,3 +1,12 @@
+# 1.0.11
+
+- Persist individual relative file paths and sizes in a checksummed index, with append-only change transactions and atomic recovery snapshots.
+- Apply normal file size deltas without switching to scan animation; subtract cached deleted subtrees and reuse cached entries for paired directory renames.
+- Coalesce writes for 80 ms; refresh parent views at most every 200 ms. Retain watchers until capacity pressure rather than discarding them after five idle minutes.
+- Increase change notification buffers to 64 KiB and rearm before processing a completed buffer. Lost notifications and unwatched restart gaps explicitly enter recovery; normal updates do not enumerate the root again.
+- Separate stable Explorer registration from versioned DLLs and remove the old product before writing the replacement registration. The installer stops only validated broker processes; Explorer restart remains an explicit final checkbox.
+- Tests: durable 100,000-file snapshot/rename/delete, torn-write rejection and recovery; offline edits across broker restart; real 2,000-file rename/deletion; numeric-only normal deltas; native shell display/canonicalization and partial-access regressions. Local samples: maximum normal delta latency 125–172 ms across two runs; 2,000-file rename/deletion 968 ms with no recovery animation. These are fixture measurements, not general performance guarantees.
+
 # 1.0.10
 
 - Skip inaccessible child directories and keep the sum of readable files. Mark partial totals as approximate; an inaccessible root remains unavailable.

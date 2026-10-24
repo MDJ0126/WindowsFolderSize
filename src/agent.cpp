@@ -3,6 +3,7 @@
 #include "cpu_budget.hpp"
 #include "cache_disk.hpp"
 #include "file_delta.hpp"
+#include "file_index.hpp"
 #include <shlobj.h>
 #include <sddl.h>
 #include <mutex>
@@ -16,24 +17,24 @@
 using namespace fsizes;
 std::atomic<bool> stopping=false;
 struct Watch {
-    HANDLE directory=INVALID_HANDLE_VALUE; OVERLAPPED ov{}; BYTE buffer[4096]{};
+    HANDLE directory=INVALID_HANDLE_VALUE; OVERLAPPED ov{}; BYTE buffer[65536]{};std::wstring oldName;
     bool arm(){ResetEvent(ov.hEvent);return ReadDirectoryChangesW(directory,buffer,sizeof(buffer),TRUE,FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|FILE_NOTIFY_CHANGE_SIZE|FILE_NOTIFY_CHANGE_LAST_WRITE,nullptr,&ov,nullptr)!=FALSE;}
     Watch(const std::wstring& path){
         directory=CreateFileW(longPath(path).c_str(),FILE_LIST_DIRECTORY,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OVERLAPPED,nullptr);
         if(directory!=INVALID_HANDLE_VALUE){ov.hEvent=CreateEventW(nullptr,TRUE,FALSE,nullptr);if(!ov.hEvent||!arm()){CloseHandle(directory);directory=INVALID_HANDLE_VALUE;}}
     }
     ~Watch(){if(directory!=INVALID_HANDLE_VALUE){CancelIoEx(directory,&ov);DWORD ignored;GetOverlappedResult(directory,&ov,&ignored,TRUE);CloseHandle(directory);}if(ov.hEvent)CloseHandle(ov.hEvent);}
-    bool changed(std::map<std::wstring,DWORD>& changes,bool& overflow){if(directory==INVALID_HANDLE_VALUE||WaitForSingleObject(ov.hEvent,0)!=WAIT_OBJECT_0)return false;DWORD n=0;if(!GetOverlappedResult(directory,&ov,&n,FALSE)||n==0)overflow=true;else{DWORD offset=0;for(;;){if(offset+sizeof(DWORD)*3>n){overflow=true;break;}auto item=reinterpret_cast<FILE_NOTIFY_INFORMATION*>(buffer+offset);if(offset+12+item->FileNameLength>n){overflow=true;break;}std::wstring name(item->FileName,item->FileNameLength/2);auto found=changes.find(name);if(found==changes.end()||item->Action!=FILE_ACTION_MODIFIED)changes[name]=item->Action;if(!item->NextEntryOffset)break;offset+=item->NextEntryOffset;if(offset>=n){overflow=true;break;}}}arm();return true;}
+    bool changed(std::map<std::wstring,DWORD>& changes,bool& overflow,std::vector<std::pair<std::wstring,std::wstring>>& renames){if(directory==INVALID_HANDLE_VALUE||WaitForSingleObject(ov.hEvent,0)!=WAIT_OBJECT_0)return false;DWORD n=0;bool ok=GetOverlappedResult(directory,&ov,&n,FALSE)!=FALSE;std::vector<BYTE> completed;if(ok&&n)completed.assign(buffer,buffer+n);bool armed=arm();if(!ok||n==0||!armed){overflow=true;log(L"Directory change notifications lost; full validation required");}if(ok&&n){DWORD offset=0;for(;;){if(offset+sizeof(DWORD)*3>n){overflow=true;break;}auto item=reinterpret_cast<FILE_NOTIFY_INFORMATION*>(completed.data()+offset);if(offset+12+item->FileNameLength>n){overflow=true;break;}std::wstring name(item->FileName,item->FileNameLength/2);if(item->Action==FILE_ACTION_RENAMED_NEW_NAME&&!oldName.empty())renames.emplace_back(oldName,name);if(item->Action==FILE_ACTION_RENAMED_OLD_NAME)oldName=name;else oldName.clear();auto found=changes.find(name);if(found==changes.end()||item->Action!=FILE_ACTION_MODIFIED)changes[name]=item->Action;if(!item->NextEntryOffset)break;offset+=item->NextEntryOffset;if(offset>=n){overflow=true;break;}}}return true;}
 };
-struct Entry {std::wstring path;uint64_t bytes=0;ULONGLONG used=0,finished=0,lastChange=0,lastAnimation=0;unsigned percent=0;DWORD error=0;bool ready=false,queued=false,running=false,changed=false;std::unique_ptr<Watch> watch;FileSizes files;bool indexed=false,overflow=false,approximate=false;std::map<std::wstring,DWORD> changes;};
+struct Entry {std::wstring path;uint64_t bytes=0;ULONGLONG used=0,finished=0,lastChange=0,lastAnimation=0;unsigned percent=0;DWORD error=0;bool ready=false,queued=false,running=false,changed=false;std::unique_ptr<Watch> watch;FileSizes files;bool indexed=false,overflow=false,approximate=false,recovering=false;std::map<std::wstring,DWORD> changes;std::vector<std::pair<std::wstring,std::wstring>> renames;};
 SavedSizes savedSizes;std::atomic<bool> diskDirty=false;
 std::mutex cacheMutex;std::condition_variable cv;std::map<std::wstring,Entry> cache;std::deque<std::wstring> pending;
 std::wstring normalized(std::wstring p){while(p.size()>3&&p.back()==L'\\')p.pop_back();CharLowerBuffW(p.data(),DWORD(p.size()));return p;}
 bool acceptable(const std::wstring& p){return p.size()>=3&&p.size()<32000&&iswalpha(p[0])&&p[1]==L':'&&p[2]==L'\\'&&p.find(L'\0')==std::wstring::npos;}
-void queue(const std::wstring& key,Entry& e){if(!e.queued&&!e.running){e.queued=true;e.percent=0;e.error=0;pending.push_back(key);cv.notify_one();}}
+void queue(const std::wstring& key,Entry& e){if(!e.queued&&!e.running){e.queued=true;e.recovering=!e.indexed||e.overflow;e.percent=0;e.error=0;pending.push_back(key);cv.notify_one();}}
 std::mutex notificationMutex;std::set<std::wstring> changedParents;
 void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);auto parent=path.substr(0,path.find_last_of(L'\\'));if(parent.size()==2)parent+=L'\\';std::lock_guard guard(notificationMutex);changedParents.insert(parent);}
-void flushNotifications(){static ULONGLONG last=0;auto now=GetTickCount64();if(now-last<1000)return;last=now;std::set<std::wstring> parents;{std::lock_guard guard(notificationMutex);parents.swap(changedParents);}for(const auto& path:parents)SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
+void flushNotifications(){static ULONGLONG last=0;auto now=GetTickCount64();if(now-last<200)return;last=now;std::set<std::wstring> parents;{std::lock_guard guard(notificationMutex);parents.swap(changedParents);}for(const auto& path:parents)SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
 void scannerWorker(){
     SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
     struct Running {std::wstring key,path;std::unique_ptr<ScanJob> scan;FileSizes files;ULONGLONG lastNotify=0;unsigned lastPercent=101;};
@@ -42,24 +43,24 @@ void scannerWorker(){
         // Admit all newly requested folders before the next short work slice.
         std::vector<std::pair<std::wstring,std::wstring>> incoming;
         {std::unique_lock lock(cacheMutex);if(active.empty())cv.wait(lock,[]{return stopping||!pending.empty();});if(stopping)break;
-            while(!pending.empty()){auto key=std::move(pending.front());pending.pop_front();auto it=cache.find(key);if(it==cache.end())continue;auto& e=it->second;e.queued=false;e.running=true;e.changed=false;if(e.ready&&e.indexed&&!e.overflow&&!e.changes.empty()){FileSizes files=std::move(e.files);auto changes=std::move(e.changes);auto bytes=e.bytes;bool approximate=e.approximate;auto path=e.path;lock.unlock();bool ok=true;for(const auto& change:changes)if(!updateFileDelta(files,bytes,fileKey(path+L"\\"+change.first),change.second,stopping,&approximate)){ok=false;break;}lock.lock();auto found=cache.find(key);if(found!=cache.end()){auto& updated=found->second;updated.running=false;updated.files=std::move(files);if(ok){updated.bytes=bytes;updated.approximate=approximate;updated.finished=GetTickCount64();savedSizes[key]=storedSize(bytes,updated.approximate);diskDirty=true;log(L"Incremental file deltas applied; no root enumeration");}else{updated.overflow=true;queue(key,updated);}lock.unlock();notify(path);lock.lock();}continue;}e.overflow=false;e.changes.clear();incoming.emplace_back(key,e.path);}}
+            while(!pending.empty()){auto key=std::move(pending.front());pending.pop_front();auto it=cache.find(key);if(it==cache.end())continue;auto& e=it->second;e.queued=false;e.running=true;e.changed=false;if(e.ready&&e.indexed&&!e.overflow&&!e.changes.empty()){FileSizes files=std::move(e.files);auto changes=std::move(e.changes);e.changes.clear();auto renames=std::move(e.renames);e.renames.clear();auto bytes=e.bytes;bool approximate=e.approximate;auto path=e.path;lock.unlock();bool ok=true;IndexChanges journal;for(const auto& rename:renames){auto oldPath=fileKey(path+L"\\"+rename.first),newPath=fileKey(path+L"\\"+rename.second);if(moveFileTree(files,bytes,oldPath,newPath,journal)){changes.erase(rename.first);auto attrs=GetFileAttributesW(longPath(newPath).c_str());if(attrs!=INVALID_FILE_ATTRIBUTES&&(attrs&FILE_ATTRIBUTE_DIRECTORY))changes.erase(rename.second);}}auto compact=compactChanges(path,changes);for(const auto& change:compact)if(!updateFileDelta(files,bytes,fileKey(path+L"\\"+change.first),change.second,stopping,&approximate,&journal)){ok=false;break;}if(ok&&!writeIndex(key,files,bytes,approximate,&journal)){log(L"File index append failed; attempting atomic snapshot");if(!writeIndex(key,files,bytes,approximate))log(L"File index persistence failed; next startup requires recovery");}lock.lock();auto found=cache.find(key);if(found!=cache.end()){auto& updated=found->second;updated.running=false;updated.recovering=false;updated.files=std::move(files);if(ok){updated.bytes=bytes;updated.approximate=approximate;updated.finished=GetTickCount64();savedSizes[key]=storedSize(bytes,updated.approximate);diskDirty=true;log(L"Incremental file deltas applied; no root enumeration");}else{updated.overflow=true;queue(key,updated);}lock.unlock();notify(path);lock.lock();}continue;}e.recovering=true;e.overflow=false;e.changes.clear();e.renames.clear();incoming.emplace_back(key,e.path);}}
         for(auto& request:incoming){
             auto job=std::make_unique<Running>();job->key=std::move(request.first);job->path=std::move(request.second);auto ptr=job.get();
-            log(L"Full folder enumeration started");job->scan=std::make_unique<ScanJob>(job->path,stopping,[ptr](unsigned percent,uint64_t){
+            FileSizes restored;uint64_t restoredBytes=0;bool restoredApproximate=false;if(readIndex(job->key,restored,restoredBytes,restoredApproximate)){std::lock_guard lock(cacheMutex);auto it=cache.find(job->key);if(it!=cache.end()){it->second.files=std::move(restored);it->second.bytes=restoredBytes;it->second.approximate=restoredApproximate;}log(L"Per-file disk index restored; validating changes missed while unwatched");}log(L"Full folder enumeration started");job->scan=std::make_unique<ScanJob>(job->path,stopping,[ptr](unsigned percent,uint64_t){
                 {std::lock_guard lock(cacheMutex);auto it=cache.find(ptr->key);if(it!=cache.end())it->second.percent=(std::min)(percent,99u);}
                 auto now=GetTickCount64();if(percent!=ptr->lastPercent&&(now-ptr->lastNotify>=1000||ptr->lastNotify==0)){notify(ptr->path);ptr->lastNotify=now;ptr->lastPercent=percent;}
             },[ptr](const std::wstring& path,uint64_t bytes){ptr->files[fileKey(path)]=bytes;});active.push_back(std::move(job));
         }
         if(active.empty())continue;auto job=std::move(active.front());active.pop_front();
         bool finished=job->scan->step(512,8);if(!finished){active.push_back(std::move(job));continue;}
-        auto result=job->scan->value();
-        {std::lock_guard lock(cacheMutex);auto it=cache.find(job->key);if(it==cache.end())continue;auto& e=it->second;e.running=false;e.finished=GetTickCount64();e.error=result.error;
+        auto result=job->scan->value();if(result.complete&&!writeIndex(job->key,job->files,result.bytes,result.approximate))log(L"File index snapshot persistence failed");
+        {std::lock_guard lock(cacheMutex);auto it=cache.find(job->key);if(it==cache.end())continue;auto& e=it->second;e.running=false;e.recovering=false;e.finished=GetTickCount64();e.error=result.error;
             // Retain the last completed snapshot during background refreshes.
             // Changes during enumeration request another pass after debounce;
             // they must not throw away a successfully calculated size.
             if(result.complete){e.bytes=result.bytes;e.approximate=result.approximate;e.files=std::move(job->files);e.indexed=true;e.ready=true;e.percent=100;savedSizes[job->key]=storedSize(e.bytes,e.approximate);while(savedSizes.size()>4096)savedSizes.erase(savedSizes.begin());diskDirty=true;}}
         notify(job->path);
-        if(!result.complete){wchar_t message[200];swprintf_s(message,L"Folder calculation unavailable (Win32 error %lu)",result.error);log(message);}
+        if(!result.complete){{std::lock_guard lock(cacheMutex);auto it=cache.find(job->key);if(it!=cache.end())it->second.ready=false;}wchar_t message[200];swprintf_s(message,L"Folder calculation unavailable (Win32 error %lu)",result.error);log(message);}
     }
 }
 void pipeWorker(){
@@ -81,7 +82,7 @@ void pipeWorker(){
                 if(acceptable(path)){
                     auto key=normalized(path);std::lock_guard lock(cacheMutex);auto it=cache.find(key);
                     if(it==cache.end()&&cache.size()<256){Entry entry;entry.path=path;entry.used=GetTickCount64();entry.watch=std::make_unique<Watch>(path);auto saved=savedSizes.find(key);if(saved!=savedSizes.end()){entry.bytes=plainSize(saved->second);entry.approximate=approximateValue(saved->second);entry.ready=true;entry.percent=100;}it=cache.emplace(key,std::move(entry)).first;queue(key,it->second);}
-                    if(it!=cache.end()){auto& e=it->second;e.used=GetTickCount64();response.ready=e.ready;response.bytes=e.bytes;response.percent=e.percent;response.state=e.ready?(e.approximate?ScanState::approximate:ScanState::complete):e.error?ScanState::failed:e.running?ScanState::scanning:ScanState::queued;if(!e.ready&&!e.queued&&!e.running&&e.used-e.finished>10000)queue(key,e);}
+                    if(it!=cache.end()){auto& e=it->second;e.used=GetTickCount64();response.ready=e.ready&&!e.recovering;response.bytes=e.bytes;response.percent=e.percent;response.state=response.ready?(e.approximate?ScanState::approximate:ScanState::complete):e.error?ScanState::failed:e.running?ScanState::scanning:ScanState::queued;if(!e.ready&&!e.queued&&!e.running&&e.used-e.finished>10000)queue(key,e);}
                 }
             }
         }
@@ -108,7 +109,7 @@ int wmain(int argc,wchar_t**argv){
     DWORD currentSession=0;ProcessIdToSessionId(GetCurrentProcessId(),&currentSession);
     wchar_t test[2];bool isolated=GetEnvironmentVariableW(L"FOLDERSIZE_TEST",test,2)>0;
     auto eventName=std::wstring(L"Local\\WindowsFolderSize.Stop.")+(isolated?L"Test.":L"")+std::to_wstring(currentSession);
-    if(argc>1&&wcscmp(argv[1],L"--stop")==0){HANDLE e=OpenEventW(EVENT_MODIFY_STATE,FALSE,eventName.c_str());if(e){SetEvent(e);CloseHandle(e);}return 0;}
+    if(argc>1&&wcscmp(argv[1],L"--stop")==0){HANDLE e=OpenEventW(EVENT_MODIFY_STATE,FALSE,eventName.c_str());if(e){SetEvent(e);CloseHandle(e);for(unsigned i=0;i<100;i++){HANDLE remaining=OpenEventW(SYNCHRONIZE,FALSE,eventName.c_str());if(!remaining)break;CloseHandle(remaining);Sleep(50);}}return 0;}
     HANDLE stopEvent=CreateEventW(nullptr,TRUE,FALSE,eventName.c_str());
     DWORD session;ProcessIdToSessionId(GetCurrentProcessId(),&session);auto mutexName=std::wstring(L"Local\\WindowsFolderSize.Agent.")+(isolated?L"Test.":L"")+std::to_wstring(session);HANDLE mutex=CreateMutexW(nullptr,FALSE,mutexName.c_str());if(!mutex||GetLastError()==ERROR_ALREADY_EXISTS)return 0;
     ResetEvent(stopEvent);
@@ -121,12 +122,12 @@ int wmain(int argc,wchar_t**argv){
     ULONGLONG lastSave=GetTickCount64();
     RegisterApplicationRestart(L"",RESTART_NO_CRASH|RESTART_NO_HANG);HANDLE lifecycle=CreateThread(nullptr,0,lifecycleMessages,nullptr,0,nullptr);if(lifecycle)CloseHandle(lifecycle);
     log(L"WindowsFolderSize started");std::thread worker(scannerWorker),server(pipeWorker);
-    while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed(e.changes,e.overflow)){e.changed=true;e.lastChange=now;}
-        // Collapse bursts of writes into a single refresh. For continuously
-        // changing folders, refresh at most once every ten seconds.
-        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=1000))queue(it->first,e);
-        if(!e.ready&&(e.queued||e.running)&&now-e.lastAnimation>=600){e.lastAnimation=now;animated.push_back(e.path);}
-        ++it;}}if(diskDirty&&GetTickCount64()-lastSave>=2000){SavedSizes snapshot;{std::lock_guard lock(cacheMutex);diskDirty=false;snapshot=savedSizes;}if(!saveSizes(cacheFile,snapshot))diskDirty=true;lastSave=GetTickCount64();}for(auto& path:animated)notify(path);flushNotifications();if(WaitForSingleObject(stopEvent,200)==WAIT_OBJECT_0)stopping=true;}
+    while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(cache.size()>=256&&!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed(e.changes,e.overflow,e.renames)){e.changed=true;e.lastChange=now;}
+        // Coalesce short write bursts; arithmetic deltas stay numeric. Keep
+        // completed indexes watched until capacity pressure requires eviction.
+        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=80||now-e.finished>=200))queue(it->first,e);
+        if((!e.ready||e.recovering)&&(e.queued||e.running)&&now-e.lastAnimation>=600){e.lastAnimation=now;animated.push_back(e.path);}
+        ++it;}}if(diskDirty&&GetTickCount64()-lastSave>=2000){SavedSizes snapshot;{std::lock_guard lock(cacheMutex);diskDirty=false;snapshot=savedSizes;}if(!saveSizes(cacheFile,snapshot))diskDirty=true;lastSave=GetTickCount64();}for(auto& path:animated)notify(path);flushNotifications();if(WaitForSingleObject(stopEvent,20)==WAIT_OBJECT_0)stopping=true;}
     // Exit terminates the blocked pipe listener after the scanner has stopped.
     cv.notify_all();worker.join();{std::lock_guard lock(cacheMutex);saveSizes(cacheFile,savedSizes);}server.detach();log(L"WindowsFolderSize stopped");CloseHandle(stopEvent);CloseHandle(mutex);ExitProcess(0);
 }

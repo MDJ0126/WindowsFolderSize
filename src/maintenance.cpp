@@ -2,6 +2,17 @@
 #include "restart_policy.hpp"
 #include <restartmanager.h>
 using namespace fsizes;
+void refreshUserRegistration(){
+ const wchar_t* key=L"Software\\Classes\\CLSID\\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\\InprocServer32";
+ HKEY machine=nullptr,user=nullptr;wchar_t target[32768];DWORD bytes=sizeof(target),type=0;
+ if(RegOpenKeyExW(HKEY_LOCAL_MACHINE,key,0,KEY_QUERY_VALUE|KEY_WOW64_64KEY,&machine)!=ERROR_SUCCESS)return;
+ auto error=RegQueryValueExW(machine,nullptr,nullptr,&type,reinterpret_cast<BYTE*>(target),&bytes);RegCloseKey(machine);
+ if(error||type!=REG_SZ||bytes<2||bytes>sizeof(target))return;target[32767]=0;
+ auto base=directory()+L"\\";if(_wcsnicmp(target,base.c_str(),base.size())||GetFileAttributesW(target)==INVALID_FILE_ATTRIBUTES)return;
+ // An older per-user repair can shadow the new machine registration. Only
+ // refresh our existing CLSID; normal machine installs create no HKCU class.
+ if(RegOpenKeyExW(HKEY_CURRENT_USER,key,0,KEY_SET_VALUE|KEY_WOW64_64KEY,&user)==ERROR_SUCCESS){RegSetValueExW(user,nullptr,0,REG_SZ,reinterpret_cast<const BYTE*>(target),DWORD((wcslen(target)+1)*2));RegCloseKey(user);}
+}
 DWORD shellPid(){DWORD pid=0;GetWindowThreadProcessId(GetShellWindow(),&pid);return pid;}
 bool launchExplorer(){
     wchar_t windows[32768];if(!GetWindowsDirectoryW(windows,32768))return false;
@@ -22,7 +33,7 @@ DWORD restartExplorer(){
     DWORD pid=shellPid(),session=0,ownSession=0;if(!pid)return ensureDesktop(0);
     if(!ProcessIdToSessionId(pid,&session)||!ProcessIdToSessionId(GetCurrentProcessId(),&ownSession)||session!=ownSession)return ERROR_ACCESS_DENIED;
     HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);if(!process)return GetLastError();
-    wchar_t image[32768];DWORD n=32768;FILETIME created,exited,kernel,user;RM_UNIQUE_PROCESS app{};
+    wchar_t image[32768];DWORD n=32768;FILETIME created{},exited{},kernel{},user{};RM_UNIQUE_PROCESS app{};
     bool valid=QueryFullProcessImageNameW(process,0,image,&n)&&GetProcessTimes(process,&created,&exited,&kernel,&user);
     CloseHandle(process);auto name=valid?wcsrchr(image,L'\\'):nullptr;if(!name||_wcsicmp(name+1,L"explorer.exe"))return ERROR_INVALID_DATA;
     app.dwProcessId=pid;app.ProcessStartTime=created;DWORD handle=0;wchar_t key[CCH_RM_SESSION_KEY+1]{};
@@ -45,6 +56,7 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR command,int){
         for(unsigned i=0;i<300;++i){if(shellPid()!=previous){Sleep(700);return ensureDesktop(previous)?1:0;}Sleep(200);}return 0;
     }
     if(wcsncmp(command,L"--finish-install",16)==0){
+        refreshUserRegistration();
         log(L"Installer Finish action entered");
         wchar_t path[32768];GetModuleFileNameW(nullptr,path,32768);auto broker=std::wstring(path);broker=broker.substr(0,broker.find_last_of(L'\\'))+L"\\WindowsFolderSize.exe";
         auto args=L"\""+broker+L"\"";STARTUPINFOW si{sizeof(si)};PROCESS_INFORMATION pi{};

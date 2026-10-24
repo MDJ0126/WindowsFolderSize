@@ -19,7 +19,7 @@ Folder totals appear directly in the existing **Size** column alongside normal f
 
 > **1.0.0 download paused:** Defender flagged the old self-extracting installer. A standard Windows Installer **1.0.1 MSI candidate** now passes local Defender scans and automated regression checks. It remains unpublished while production-scope and on-screen acceptance checks are pending. See [security validation](docs/security-validation.md). Do not disable protection or allowlist 1.0.0.
 
-Published downloads are temporarily held. The candidate is built as `dist\WindowsFolderSize-1.0.1-x64.msi`.
+Published downloads are temporarily held. The candidate is built as `dist\WindowsFolderSize-1.0.11-x64.msi`.
 
 1. Run the installer and approve extension registration when Windows asks.
 2. Follow the progress inside the setup window.
@@ -68,13 +68,13 @@ wix extension add -g WixToolset.UI.wixext/6.0.2
 build.cmd
 ```
 
-The MSI is written to `dist\WindowsFolderSize-1.0.1-x64.msi`. Version 1.0.1 is embedded in the executable and MSI metadata. The project uses the static C++ runtime.
+The MSI is written to `dist\WindowsFolderSize-1.0.11-x64.msi`. Version 1.0.11 is embedded in the executable and MSI metadata. The project uses the static C++ runtime.
 
-The source includes tests for resumable scans, progress formatting through the native shell property APIs, change detection. Installer validation and lifecycle results are documented separately in [security validation](docs/security-validation.md). `scripts\test.cmd` runs them in a separate test namespace; it does not restart Explorer or install the application.
+The source includes tests for resumable scans, progress formatting through the native shell property APIs, change detection. Installer validation and lifecycle results are documented separately in [security validation](docs/security-validation.md). `scripts\test-index.cmd` adds durable 100,000-file index, interrupted-write recovery, restart recovery and real 2,000-file burst tests. `scripts\test-delta.cmd` checks numeric-only updates, response latency and durable file entries. `scripts\test.cmd` runs the shell regression tests in a separate test namespace; it does not restart Explorer or install the application.
 
 ## How it works
 
-A native background broker enumerates file metadata and watches for changes. An Explorer COM extension retrieves cached totals and formats pending scan values in the standard Size column. Microsoft public symbols resolve the Explorer hooks for the installed Windows build.
+A native background broker records each file path and size in a checksummed disk index. Normal file edits apply only the old/new size difference; deleted subtrees subtract their cached entries, and paired directory renames reuse the existing index. Small change journals are appended instead of rewriting the entire index on every edit. Normal updates keep the numeric size visible. Animation is reserved for initial enumeration and recovery after lost notifications, a damaged index, or an unwatched period such as a broker restart. Restart recovery validates offline changes before treating the saved index as current. Completed indexes remain watched until cache capacity requires eviction. The broker retains its 2% CPU hard cap. An Explorer COM extension retrieves cached totals and formats pending scan values in the standard Size column. Microsoft public symbols resolve the Explorer hooks for the installed Windows build.
 
 ## License and credits
 
