@@ -9,23 +9,23 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WindowsFolderSize">
         <Component Id="Broker" Guid="*" Bitness="always64">
-          <File Id="BrokerExe" Source="dist\WindowsFolderSize.exe" KeyPath="yes" />
+          <File Id="BrokerExe" Source="build\bin\WindowsFolderSize.exe" KeyPath="yes" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="WindowsFolderSize" Type="string" Value="&quot;[#BrokerExe]&quot;" />
         </Component>
         <Component Id="ExplorerExtension" Guid="*" Bitness="always64">
-          <File Id="HookDll" Source="dist\WindowsFolderSizeHook.dll" KeyPath="yes" />
+          <File Id="HookDll" Source="build\bin\WindowsFolderSizeHook.dll" KeyPath="yes" />
           <RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Type="string" Value="[#HookDll]" />
           <RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Name="ThreadingModel" Type="string" Value="Apartment" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers\WindowsFolderSize" Type="string" Value="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" />
           <RegistryValue Root="HKLM" Key="Software\Classes\Folder\shellex\ContextMenuHandlers\WindowsFolderSize" Type="string" Value="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved" Name="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" Type="string" Value="WindowsFolderSize" />
         </Component>
-        <Component Id="Maintenance" Guid="*" Bitness="always64"><File Id="MaintenanceExe" Source="dist\WindowsFolderSizeMaintenance.exe" KeyPath="yes" /></Component>
+        <Component Id="Maintenance" Guid="*" Bitness="always64"><File Id="MaintenanceExe" Source="build\bin\WindowsFolderSizeMaintenance.exe" KeyPath="yes" /></Component>
         <Component Id="Notices" Guid="{DC422E53-406A-4910-954B-4EA69C0CC31E}" Bitness="always64"><File Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" /><File Source="THIRD_PARTY.md" /><File Source="third_party\minhook\LICENSE.txt" Name="MinHook-LICENSE.txt" /></Component>
         <Directory Id="SymbolsFolder" Name="Symbols">
-          <Component Id="SymbolHelper" Guid="*" Bitness="always64"><File Source="dist\Symbols\WindowsFolderSizeSymbols.exe" KeyPath="yes" /></Component>
-          <Component Id="DbgHelp" Guid="*" Bitness="always64"><File Source="dist\Symbols\dbghelp.dll" KeyPath="yes" /></Component>
-          <Component Id="SymSrv" Guid="*" Bitness="always64"><File Source="dist\Symbols\symsrv.dll" KeyPath="yes" /></Component>
+          <Component Id="SymbolHelper" Guid="*" Bitness="always64"><File Source="build\bin\Symbols\WindowsFolderSizeSymbols.exe" KeyPath="yes" /></Component>
+          <Component Id="DbgHelp" Guid="*" Bitness="always64"><File Source="build\bin\Symbols\dbghelp.dll" KeyPath="yes" /></Component>
+          <Component Id="SymSrv" Guid="*" Bitness="always64"><File Source="build\bin\Symbols\symsrv.dll" KeyPath="yes" /></Component>
         </Directory>
       </Directory>
     </StandardDirectory>
