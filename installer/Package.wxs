@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.11" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
+  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.12" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
     <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of WindowsFolderSize is already installed." />
     <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" Secure="yes" />
     <Property Id="MSIDISABLERMRESTART" Value="1" Secure="yes" />
@@ -16,14 +16,14 @@
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="WindowsFolderSize" Type="string" Value="&quot;[#BrokerExe]&quot;" />
         </Component>
         <Component Id="ExplorerExtension" Guid="*" Bitness="always64">
-          <File Id="HookDll" Name="WindowsFolderSizeHook-1.0.11.dll" Source="build\bin\WindowsFolderSizeHook.dll" KeyPath="yes" />
-          </Component><Component Id="ExplorerRegistration" Guid="{6BD8D279-7215-43FA-BAD6-4792B40FA61B}" Bitness="always64"><RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Type="string" Value="[INSTALLFOLDER]WindowsFolderSizeHook-1.0.11.dll" KeyPath="yes" />
+          <File Id="HookDll" Name="WindowsFolderSizeHook-1.0.12.dll" Source="build\bin\WindowsFolderSizeHook.dll" KeyPath="yes" />
+          </Component><Component Id="ExplorerRegistration" Guid="{6BD8D279-7215-43FA-BAD6-4792B40FA61B}" Bitness="always64"><RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Type="string" Value="[INSTALLFOLDER]WindowsFolderSizeHook-1.0.12.dll" KeyPath="yes" />
           <RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Name="ThreadingModel" Type="string" Value="Apartment" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers\WindowsFolderSize" Type="string" Value="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" />
           <RegistryValue Root="HKLM" Key="Software\Classes\Folder\shellex\ContextMenuHandlers\WindowsFolderSize" Type="string" Value="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved" Name="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" Type="string" Value="WindowsFolderSize" />
         </Component>
-        <Component Id="Maintenance" Guid="*" Bitness="always64"><File Id="MaintenanceExe" Source="build\bin\WindowsFolderSizeMaintenance.exe" KeyPath="yes" /></Component>
+        <Component Id="UserRegistration" Guid="{71E0A430-3FB0-4A6D-BC19-936D4DE14334}" Bitness="always64"><RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Type="string" Value="[INSTALLFOLDER]WindowsFolderSizeHook-1.0.12.dll" KeyPath="yes"/><RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Name="ThreadingModel" Type="string" Value="Apartment"/></Component><Component Id="Maintenance" Guid="*" Bitness="always64"><File Id="MaintenanceExe" Source="build\bin\WindowsFolderSizeMaintenance.exe" KeyPath="yes" /></Component>
         <Component Id="Notices" Guid="{DC422E53-406A-4910-954B-4EA69C0CC31E}" Bitness="always64"><File Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" /><File Source="THIRD_PARTY.md" /><File Source="third_party\minhook\LICENSE.txt" Name="MinHook-LICENSE.txt" /></Component>
         <Directory Id="SymbolsFolder" Name="Symbols">
           <Component Id="SymbolHelper" Guid="*" Bitness="always64"><File Source="build\bin\Symbols\WindowsFolderSizeSymbols.exe" KeyPath="yes" /></Component>
@@ -32,16 +32,16 @@
         </Directory>
       </Directory>
     </StandardDirectory>
-    <Feature Id="Complete" Title="WindowsFolderSize" Level="1"><ComponentRef Id="Broker" /><ComponentRef Id="ExplorerExtension" /><ComponentRef Id="ExplorerRegistration" /><ComponentRef Id="Maintenance" /><ComponentRef Id="Notices" /><ComponentRef Id="SymbolHelper" /><ComponentRef Id="DbgHelp" /><ComponentRef Id="SymSrv" /></Feature>
+    <Feature Id="Complete" Title="WindowsFolderSize" Level="1"><ComponentRef Id="Broker" /><ComponentRef Id="ExplorerExtension" /><ComponentRef Id="ExplorerRegistration" /><ComponentRef Id="UserRegistration" /><ComponentRef Id="Maintenance" /><ComponentRef Id="Notices" /><ComponentRef Id="SymbolHelper" /><ComponentRef Id="DbgHelp" /><ComponentRef Id="SymSrv" /></Feature>
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="assets\license.rtf" />
     <WixVariable Id="WixUIBannerBmp" Value="assets\installer-banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="assets\installer-dialog.bmp" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="WindowsFolderSize is installed. Select the checkbox below to restart File Explorer now; its open windows will close. Otherwise, changes apply at your next sign-in." />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Restart File Explorer now" />
-    <Binary Id="StopBrokerBinary" SourceFile="build\bin\WindowsFolderSizeStop.exe" /><CustomAction Id="StopBroker" BinaryRef="StopBrokerBinary" ExeCommand="" Return="ignore" Impersonate="yes" />
+    <Binary Id="StopBrokerBinary" SourceFile="build\bin\WindowsFolderSizeStop.exe" /><CustomAction Id="StopBroker" BinaryRef="StopBrokerBinary" ExeCommand="" Return="check" Impersonate="yes" />
     <CustomAction Id="FinishSetup" FileRef="MaintenanceExe" ExeCommand="--finish-install [WIXUI_EXITDIALOGOPTIONALCHECKBOX]" Return="asyncNoWait" Impersonate="yes" />
-    <InstallExecuteSequence><Custom Action="StopBroker" Before="InstallValidate" Condition="Installed OR WIX_UPGRADE_DETECTED" /></InstallExecuteSequence>
+    <CustomAction Id="StartBroker" Directory="INSTALLFOLDER" ExeCommand="&quot;[#BrokerExe]&quot;" Return="asyncNoWait"/><InstallExecuteSequence><Custom Action="StopBroker" Before="InstallValidate" Condition="NOT REMOVE~=&quot;ALL&quot;"/><Custom Action="StartBroker" After="InstallFinalize" Condition="NOT REMOVE~=&quot;ALL&quot;"/></InstallExecuteSequence>
     <UI>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="FinishSetup" Order="1" Condition="NOT REMOVE" />
     </UI>

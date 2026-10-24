@@ -1,3 +1,11 @@
+# 1.0.12
+
+- Repair stale per-user COM registration during the MSI transaction, before relying on the final UI action.
+- Start the broker after InstallFinalize, including unattended installation; keep Explorer restart optional at Finish.
+- Recognize the previous broker after Windows Installer moves its image into Config.Msi with an .rbf name. Validate product metadata before normal Restart Manager shutdown, and report failure instead of silently continuing.
+- Order the ExitDialog EndDialog event after the Finish maintenance action explicitly.
+- Verified live recovery on the affected machine: installed 1.0.11 broker replaced the old 1.0.10 process; Explorer loaded the matching DLL and displayed all folder sizes. Adding/removing a 1 MiB fixture updated the WindowsFolderSize row from 54.6 MB to 55.6 MB and back without refreshing or restarting Explorer after the initial recovery.
+
 # 1.0.11
 
 - Persist individual relative file paths and sizes in a checksummed index, with append-only change transactions and atomic recovery snapshots.
