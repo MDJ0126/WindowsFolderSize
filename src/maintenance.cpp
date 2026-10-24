@@ -44,6 +44,16 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR command,int){
         DWORD previous=wcstoul(command+14,nullptr,10);if(!previous)return 2;
         for(unsigned i=0;i<300;++i){if(shellPid()!=previous){Sleep(700);return ensureDesktop(previous)?1:0;}Sleep(200);}return 0;
     }
+    if(wcsncmp(command,L"--finish-install",16)==0){
+        log(L"Installer Finish action entered");
+        wchar_t path[32768];GetModuleFileNameW(nullptr,path,32768);auto broker=std::wstring(path);broker=broker.substr(0,broker.find_last_of(L'\\'))+L"\\WindowsFolderSize.exe";
+        auto args=L"\""+broker+L"\"";STARTUPINFOW si{sizeof(si)};PROCESS_INFORMATION pi{};
+        if(!CreateProcessW(broker.c_str(),args.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&si,&pi)){log(L"Installer Finish could not start broker");return 3;}
+        CloseHandle(pi.hThread);CloseHandle(pi.hProcess);
+        const wchar_t* option=command+16;while(*option==L' ')++option;
+        if(*option!=L'1'){log(L"Installer Finish: Explorer restart not selected");return 0;}
+        log(L"Installer Finish: user selected Explorer restart");return restartExplorer()?1:0;
+    }
     if(wcscmp(command,L"--restart-explorer"))return 2;
     DWORD error=restartExplorer();
     if(error){wchar_t text[256];swprintf_s(text,L"WindowsFolderSize is installed. File Explorer could not be restarted (error %lu). Open Task Manager, choose Run new task, and enter explorer.exe to restore the desktop.",error);MessageBoxW(nullptr,text,L"WindowsFolderSize",MB_OK|MB_ICONERROR|MB_SETFOREGROUND);}

@@ -14,10 +14,39 @@ constexpr uint32_t progressMagic = 0x46535A32;
 constexpr wchar_t pipeName[] = L"\\\\.\\pipe\\WindowsFolderSize-";
 struct Request { uint32_t magicValue = progressMagic; uint32_t characters = 0; };
 struct LegacyResponse { uint32_t magicValue = magic; uint32_t ready = 0; uint64_t bytes = 0; };
-enum class ScanState : uint32_t { queued=0, scanning=1, complete=2, failed=3 };
+enum class ScanState : uint32_t { queued=0, scanning=1, complete=2, failed=3, approximate=4 };
 struct Response { uint32_t magicValue = progressMagic; uint32_t ready = 0; uint64_t bytes = 0; uint32_t percent=0; ScanState state=ScanState::queued; };
+constexpr uint64_t approximateFlag=uint64_t(1)<<63;
+inline bool approximateValue(uint64_t bytes){return (bytes&approximateFlag)&&bytes<UINT64_MAX-511;}
+inline uint64_t plainSize(uint64_t bytes){return approximateValue(bytes)?bytes&~approximateFlag:bytes;}
+inline uint64_t storedSize(uint64_t bytes,bool approximate){return approximate?bytes|approximateFlag:bytes;}
+struct UiWords {const wchar_t* unavailable;const wchar_t* approximate;};
+inline UiWords uiWords(LANGID language=GetUserDefaultUILanguage()){
+ switch(PRIMARYLANGID(language)){
+ case LANG_KOREAN:return {L"계산 불가",L"약 "};
+ case LANG_JAPANESE:return {L"計算不可",L"約 "};
+ case LANG_CHINESE:return SUBLANGID(language)==SUBLANG_CHINESE_TRADITIONAL||SUBLANGID(language)==SUBLANG_CHINESE_HONGKONG?UiWords{L"無法計算",L"約 "}:UiWords{L"无法计算",L"约 "};
+ case LANG_GERMAN:return {L"Nicht verfügbar",L"Ca. "};
+ case LANG_FRENCH:return {L"Indisponible",L"Env. "};
+ case LANG_SPANISH:return {L"No disponible",L"Aprox. "};
+ case LANG_PORTUGUESE:return {L"Indisponível",L"Aprox. "};
+ case LANG_ITALIAN:return {L"Non disponibile",L"Circa "};
+ case LANG_RUSSIAN:return {L"Недоступно",L"≈ "};
+ case LANG_ARABIC:return {L"غير متاح",L"حوالي "};
+ case LANG_DUTCH:return {L"Niet beschikbaar",L"Ca. "};
+ case LANG_POLISH:return {L"Niedostępne",L"Około "};
+ case LANG_TURKISH:return {L"Kullanılamıyor",L"Yaklaşık "};
+ case LANG_SWEDISH:return {L"Ej tillgängligt",L"Cirka "};
+ case LANG_CZECH:return {L"Nedostupné",L"Přibližně "};
+ case LANG_UKRAINIAN:return {L"Недоступно",L"Прибл. "};
+ case LANG_VIETNAMESE:return {L"Không khả dụng",L"Khoảng "};
+ case LANG_THAI:return {L"ไม่พร้อมใช้งาน",L"ประมาณ "};
+ case LANG_INDONESIAN:return {L"Tidak tersedia",L"Sekitar "};
+ default:return {L"Unavailable",L"Approx. "};
+ }
+}
 inline std::wstring progressText(const Response& response,unsigned dots=3){
-    if(response.state==ScanState::failed)return L"계산 불가";
+    if(response.state==ScanState::failed)return uiWords().unavailable;
     return std::wstring(dots,L'.')+std::to_wstring(response.state==ScanState::queued?0u:(std::min)(response.percent,99u))+L"%";
 }
 // Keep System.Size canonical (VT_UI8) while a scan is pending. Reserve the

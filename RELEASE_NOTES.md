@@ -1,3 +1,11 @@
+# 1.0.10
+
+- Skip inaccessible child directories and keep the sum of readable files. Mark partial totals as approximate; an inaccessible root remains unavailable.
+- Localize approximation and failure text using the Windows display language (19 languages; English fallback). Preserve Windows numeric/unit formatting.
+- Persist the approximation flag in cache format v2, with v1 migration. Keep partial status during incremental updates.
+- Version the Explorer DLL filename so the new formatter can load after the optional final Explorer restart without overwriting the mapped DLL.
+- Actual ACL regression: partial 1234 bytes, inaccessible root rejected, restored permissions exact 1334 bytes. Cache roundtrip, KO/EN words, canonicalization and COM/exported display paths passed. MSI validation and Defender scan passed.
+
 # 1.0.8
 
 - Start the broker after repair/reinstallation as well as first installation. Previously repair stopped the broker but excluded it from the Finish action.

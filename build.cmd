@@ -33,6 +33,8 @@ if errorlevel 1 exit /b 1
 cl %COMMON% src\cache_test.cpp /Fobuild\cache_test.obj /Febuild\bin\WindowsFolderSizeCacheTest.exe /link /DYNAMICBASE /NXCOMPAT
 if errorlevel 1 exit /b 1
 :setup
+cl %COMMON% src\msi_finish_patch.cpp /Fobuild\msi_finish_patch.obj /Febuild\msi_finish_patch.exe msi.lib
+if errorlevel 1 exit /b 1
 cl %COMMON% src\restart_policy_test.cpp /Fobuild\restart_policy_test.obj /Febuild\restart_policy_test.exe
 if errorlevel 1 exit /b 1
 build\restart_policy_test.exe

@@ -23,13 +23,18 @@ volatile LONG hookStatus=0;
 extern "C" __declspec(dllexport) LONG WindowsFolderSizeHookStatus(){return InterlockedCompareExchange(&hookStatus,0,0);}
 bool isSize(const PROPERTYKEY* key){return key&&key->pid==sizeKey.pid&&IsEqualGUID(key->fmtid,sizeKey.fmtid);}
 bool pendingDisplay(REFPROPVARIANT value,std::wstring& text){return value.vt==VT_UI8&&pendingSizeText(value.uhVal.QuadPart,text);}
-HRESULT WINAPI formatAlloc(REFPROPERTYKEY key,REFPROPVARIANT value,PROPDESC_FORMAT_FLAGS flags,PWSTR* output){std::wstring text;if(isSize(&key)&&pendingDisplay(value,text))return SHStrDupW(text.c_str(),output);if(isSize(&key))flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);return originalFormatAlloc(key,value,flags,output);}
-HRESULT WINAPI formatValue(REFPROPERTYKEY key,REFPROPVARIANT value,PROPDESC_FORMAT_FLAGS flags,PWSTR output,DWORD count){std::wstring text;if(isSize(&key)&&pendingDisplay(value,text))return StringCchCopyW(output,count,text.c_str());if(isSize(&key))flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);return originalFormat(key,value,flags,output,count);}
+template<class Format> HRESULT approximateFormat(REFPROPVARIANT value,PWSTR* output,Format format){
+ if(!output)return E_POINTER;*output=nullptr;PROPVARIANT exact=value;exact.uhVal.QuadPart=plainSize(value.uhVal.QuadPart);PWSTR raw=nullptr;HRESULT hr=format(exact,&raw);if(FAILED(hr))return hr;
+ auto text=std::wstring(uiWords().approximate)+(raw?raw:L"");CoTaskMemFree(raw);return SHStrDupW(text.c_str(),output);
+}
+HRESULT WINAPI formatAlloc(REFPROPERTYKEY key,REFPROPVARIANT value,PROPDESC_FORMAT_FLAGS flags,PWSTR* output){
+ std::wstring text;if(isSize(&key)&&pendingDisplay(value,text))return SHStrDupW(text.c_str(),output);if(isSize(&key)){flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);if(value.vt==VT_UI8&&approximateValue(value.uhVal.QuadPart))return approximateFormat(value,output,[&](REFPROPVARIANT exact,PWSTR* raw){return originalFormatAlloc(key,exact,flags,raw);});}return originalFormatAlloc(key,value,flags,output);
+}
+HRESULT WINAPI formatValue(REFPROPERTYKEY key,REFPROPVARIANT value,PROPDESC_FORMAT_FLAGS flags,PWSTR output,DWORD count){
+ std::wstring text;if(isSize(&key)&&pendingDisplay(value,text))return StringCchCopyW(output,count,text.c_str());if(isSize(&key)){flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);if(value.vt==VT_UI8&&approximateValue(value.uhVal.QuadPart)){PROPVARIANT exact=value;exact.uhVal.QuadPart=plainSize(value.uhVal.QuadPart);wchar_t raw[256]{};HRESULT hr=originalFormat(key,exact,flags,raw,256);if(FAILED(hr))return hr;text=std::wstring(uiWords().approximate)+raw;return StringCchCopyW(output,count,text.c_str());}}return originalFormat(key,value,flags,output,count);
+}
 HRESULT STDMETHODCALLTYPE descriptionFormat(IPropertyDescription* description,REFPROPVARIANT value,PROPDESC_FORMAT_FLAGS flags,PWSTR* output){
-    PROPERTYKEY key{};if(SUCCEEDED(description->GetPropertyKey(&key))&&isSize(&key)){
-        std::wstring text;if(pendingDisplay(value,text))return SHStrDupW(text.c_str(),output);
-        flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);
-    }return originalDescriptionFormat(description,value,flags,output);
+ PROPERTYKEY key{};if(SUCCEEDED(description->GetPropertyKey(&key))&&isSize(&key)){std::wstring text;if(pendingDisplay(value,text))return SHStrDupW(text.c_str(),output);flags=PROPDESC_FORMAT_FLAGS(flags&~PDFF_ALWAYSKB);if(value.vt==VT_UI8&&approximateValue(value.uhVal.QuadPart))return approximateFormat(value,output,[&](REFPROPVARIANT exact,PWSTR* raw){return originalDescriptionFormat(description,exact,flags,raw);});}return originalDescriptionFormat(description,value,flags,output);
 }
 bool query(const std::wstring& path,Response& response){
     if(path.size()<3||path.size()>=32000||path[1]!=L':')return false;
@@ -46,7 +51,7 @@ HRESULT WINAPI getSize(void* object,const ITEMID_CHILD* child,const void* folder
     if(SUCCEEDED(reinterpret_cast<IUnknown*>(object)->QueryInterface(IID_PPV_ARGS(&sf)))){
         STRRET name{};
         if(SUCCEEDED(sf->GetDisplayNameOf(child,SHGDN_FORPARSING,&name))){
-            PWSTR path=nullptr;if(SUCCEEDED(StrRetToStrW(&name,child,&path))){Response response;if(query(path,response)){value->vt=VT_UI8;value->uhVal.QuadPart=response.ready?response.bytes:pendingSize(response);}CoTaskMemFree(path);}
+            PWSTR path=nullptr;if(SUCCEEDED(StrRetToStrW(&name,child,&path))){Response response;if(query(path,response)){value->vt=VT_UI8;value->uhVal.QuadPart=response.ready?storedSize(response.bytes,response.state==ScanState::approximate):pendingSize(response);}CoTaskMemFree(path);}
         }sf->Release();
     }insideSize=false;return hr;
 }

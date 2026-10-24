@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.8" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
+  <Package Name="WindowsFolderSize" Manufacturer="MDJ0126" Version="1.0.10" Language="1033" UpgradeCode="{94203557-DA96-4E8C-9C7B-385B09A514C5}" Scope="perMachine">
     <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of WindowsFolderSize is already installed." />
     <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" Secure="yes" />
     <Property Id="MSIDISABLERMRESTART" Value="1" Secure="yes" />
@@ -16,7 +16,7 @@
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="WindowsFolderSize" Type="string" Value="&quot;[#BrokerExe]&quot;" />
         </Component>
         <Component Id="ExplorerExtension" Guid="*" Bitness="always64">
-          <File Id="HookDll" Source="build\bin\WindowsFolderSizeHook.dll" KeyPath="yes" />
+          <File Id="HookDll" Name="WindowsFolderSizeHook-1.0.10.dll" Source="build\bin\WindowsFolderSizeHook.dll" KeyPath="yes" />
           <RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Type="string" Value="[#HookDll]" />
           <RegistryValue Root="HKLM" Key="Software\Classes\CLSID\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\InprocServer32" Name="ThreadingModel" Type="string" Value="Apartment" />
           <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers\WindowsFolderSize" Type="string" Value="{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}" />
@@ -39,13 +39,11 @@
     <WixVariable Id="WixUIDialogBmp" Value="assets\installer-dialog.bmp" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="WindowsFolderSize is installed. Select the checkbox below to restart File Explorer now; its open windows will close. Otherwise, changes apply at your next sign-in." />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Restart File Explorer now" />
-    <CustomAction Id="StartBroker" FileRef="BrokerExe" ExeCommand="" Return="asyncNoWait" Impersonate="yes" />
     <CustomAction Id="StopBroker" FileRef="BrokerExe" ExeCommand="--stop" Return="ignore" Impersonate="yes" />
-    <CustomAction Id="RestartExplorer" FileRef="MaintenanceExe" ExeCommand="--restart-explorer" Return="asyncNoWait" Impersonate="yes" />
+    <CustomAction Id="FinishSetup" FileRef="MaintenanceExe" ExeCommand="--finish-install [WIXUI_EXITDIALOGOPTIONALCHECKBOX]" Return="asyncNoWait" Impersonate="yes" />
     <InstallExecuteSequence><Custom Action="StopBroker" Before="InstallValidate" Condition="Installed OR WIX_UPGRADE_DETECTED" /></InstallExecuteSequence>
     <UI>
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="StartBroker" Order="1" Condition="NOT REMOVE" />
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RestartExplorer" Order="2" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT REMOVE" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="FinishSetup" Order="1" Condition="NOT REMOVE" />
     </UI>
   </Package>
 </Wix>
