@@ -1,5 +1,6 @@
 #include "common.hpp"
 #include "scanner.hpp"
+#include "cpu_budget.hpp"
 #include <shlobj.h>
 #include <sddl.h>
 #include <mutex>
@@ -27,7 +28,7 @@ std::mutex cacheMutex;std::condition_variable cv;std::map<std::wstring,Entry> ca
 std::wstring normalized(std::wstring p){while(p.size()>3&&p.back()==L'\\')p.pop_back();CharLowerBuffW(p.data(),DWORD(p.size()));return p;}
 bool acceptable(const std::wstring& p){return p.size()>=3&&p.size()<32000&&iswalpha(p[0])&&p[1]==L':'&&p[2]==L'\\'&&p.find(L'\0')==std::wstring::npos;}
 void queue(const std::wstring& key,Entry& e){if(!e.queued&&!e.running){e.queued=true;e.percent=0;e.error=0;pending.push_back(key);cv.notify_one();}}
-void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);auto parent=path.substr(0,path.find_last_of(L'\\'));if(parent.size()==2)parent+=L'\\';SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,parent.c_str(),nullptr);}
+void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
 void scannerWorker(){
     SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
     struct Running {std::wstring key,path;std::unique_ptr<ScanJob> scan;ULONGLONG lastNotify=0;unsigned lastPercent=101;};
@@ -41,11 +42,11 @@ void scannerWorker(){
             auto job=std::make_unique<Running>();job->key=std::move(request.first);job->path=std::move(request.second);auto ptr=job.get();
             job->scan=std::make_unique<ScanJob>(job->path,stopping,[ptr](unsigned percent,uint64_t){
                 {std::lock_guard lock(cacheMutex);auto it=cache.find(ptr->key);if(it!=cache.end())it->second.percent=(std::min)(percent,99u);}
-                auto now=GetTickCount64();if(percent!=ptr->lastPercent&&(now-ptr->lastNotify>=200||ptr->lastNotify==0)){notify(ptr->path);ptr->lastNotify=now;ptr->lastPercent=percent;}
+                auto now=GetTickCount64();if(percent!=ptr->lastPercent&&(now-ptr->lastNotify>=1000||ptr->lastNotify==0)){notify(ptr->path);ptr->lastNotify=now;ptr->lastPercent=percent;}
             });active.push_back(std::move(job));
         }
         if(active.empty())continue;auto job=std::move(active.front());active.pop_front();
-        if(!job->scan->step()){active.push_back(std::move(job));continue;}
+        bool finished=job->scan->step(64,2);Sleep(30);if(!finished){active.push_back(std::move(job));continue;}
         auto result=job->scan->value();
         {std::lock_guard lock(cacheMutex);auto it=cache.find(job->key);if(it==cache.end())continue;auto& e=it->second;e.running=false;e.finished=GetTickCount64();e.error=result.error;
             // Retain the last completed snapshot during background refreshes.
@@ -106,12 +107,14 @@ int wmain(int argc,wchar_t**argv){
     HANDLE stopEvent=CreateEventW(nullptr,TRUE,FALSE,eventName.c_str());
     DWORD session;ProcessIdToSessionId(GetCurrentProcessId(),&session);auto mutexName=std::wstring(L"Local\\WindowsFolderSize.Agent.")+(isolated?L"Test.":L"")+std::to_wstring(session);HANDLE mutex=CreateMutexW(nullptr,FALSE,mutexName.c_str());if(!mutex||GetLastError()==ERROR_ALREADY_EXISTS)return 0;
     if(!resolveSymbols()){log(L"Required symbols missing. No Explorer changes made.");CloseHandle(mutex);return 1;}
+    if(!limitCpu()){log(L"Cannot enforce 1% CPU limit; broker stopped");return 2;}
+    log(L"CPU hard cap active: 1% of system CPU");
     RegisterApplicationRestart(L"",RESTART_NO_CRASH|RESTART_NO_HANG);HANDLE lifecycle=CreateThread(nullptr,0,lifecycleMessages,nullptr,0,nullptr);if(lifecycle)CloseHandle(lifecycle);
     log(L"WindowsFolderSize started");std::thread worker(scannerWorker),server(pipeWorker);
     while(!stopping){std::vector<std::wstring> animated;{std::lock_guard lock(cacheMutex);auto now=GetTickCount64();for(auto it=cache.begin();it!=cache.end();){auto& e=it->second;if(!e.running&&!e.queued&&now-e.used>300000){it=cache.erase(it);continue;}if(e.watch&&e.watch->changed()){e.changed=true;e.lastChange=now;}
         // Collapse bursts of writes into a single refresh. For continuously
         // changing folders, refresh at most once every ten seconds.
-        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=10000))queue(it->first,e);
+        if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=60000))queue(it->first,e);
         if(!e.ready&&(e.queued||e.running)&&now-e.lastAnimation>=600){e.lastAnimation=now;animated.push_back(e.path);}
         ++it;}}for(auto& path:animated)notify(path);if(WaitForSingleObject(stopEvent,200)==WAIT_OBJECT_0)stopping=true;}
     // Exit terminates the blocked pipe listener after the scanner has stopped.

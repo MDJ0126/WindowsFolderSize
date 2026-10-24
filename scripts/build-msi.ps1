@@ -3,8 +3,8 @@ $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try{
- & $Wix build installer\Package.wxs -arch x64 -ext WixToolset.UI.wixext/6.0.2 -o dist\WindowsFolderSize-1.0.2-x64.msi
+ & $Wix build installer\Package.wxs -arch x64 -ext WixToolset.UI.wixext/6.0.2 -o dist\WindowsFolderSize-1.0.4-x64.msi
  if($LASTEXITCODE -ne 0){throw 'MSI build failed'}
- $stream=[IO.File]::OpenRead((Join-Path $root 'dist\WindowsFolderSize-1.0.2-x64.msi'));$sha=[Security.Cryptography.SHA256]::Create();try{$hash=([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-','').ToLower()}finally{$stream.Dispose();$sha.Dispose()}
- [IO.File]::WriteAllText((Join-Path $root 'dist\SHA256SUMS-1.0.2.txt'),($hash+'  WindowsFolderSize-1.0.2-x64.msi'+"`n"),[Text.UTF8Encoding]::new($false))
+ $stream=[IO.File]::OpenRead((Join-Path $root 'dist\WindowsFolderSize-1.0.4-x64.msi'));$sha=[Security.Cryptography.SHA256]::Create();try{$hash=([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-','').ToLower()}finally{$stream.Dispose();$sha.Dispose()}
+ [IO.File]::WriteAllText((Join-Path $root 'dist\SHA256SUMS-1.0.4.txt'),($hash+'  WindowsFolderSize-1.0.4-x64.msi'+"`n"),[Text.UTF8Encoding]::new($false))
 }finally{Pop-Location}

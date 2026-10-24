@@ -9,10 +9,13 @@ set COMMON=/nologo /O2 /MT /std:c++17 /EHsc /W4 /utf-8 /DUNICODE /D_UNICODE /D_W
 if /I "%~1"=="setup" goto setup
 rc /nologo /fo build\app.res src\app.rc
 if errorlevel 1 exit /b 1
+if /I "%~1"=="broker" goto broker
 cl %COMMON% /c third_party\minhook\src\buffer.c third_party\minhook\src\hook.c third_party\minhook\src\trampoline.c third_party\minhook\src\hde\hde64.c /Fobuild\
 if errorlevel 1 exit /b 1
+:broker
 cl %COMMON% src\agent.cpp build\app.res /Fobuild\agent.obj /Fedist\WindowsFolderSize.exe shell32.lib advapi32.lib user32.lib ole32.lib uuid.lib /link /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup /DYNAMICBASE /NXCOMPAT
 if errorlevel 1 exit /b 1
+if /I "%~1"=="broker" exit /b 0
 rc /nologo /fo build\hook.res src\hook.rc
 if errorlevel 1 exit /b 1
 cl %COMMON% /LD src\hook.cpp build\hook.res /Ithird_party\minhook\include build\buffer.obj build\hook.obj build\trampoline.obj build\hde64.obj /Fobuild\extension.obj /Fedist\WindowsFolderSizeHook.dll shell32.lib shlwapi.lib ole32.lib propsys.lib uuid.lib /link /DEF:src\hook.def /DYNAMICBASE /NXCOMPAT

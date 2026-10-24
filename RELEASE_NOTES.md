@@ -1,3 +1,11 @@
+# 1.0.4
+
+- Enforce a 1% system CPU hard cap for the broker using Windows Job Objects; stop rather than silently run uncapped if enforcement fails.
+- Scan at most 64 entries / 2 ms per slice, with a 30 ms pause and idle process priority.
+- Keep animated progress, limit percentage-change notifications to once per second, and notify only the changed item rather than refreshing the whole parent folder.
+- Refresh continuously changing folders at most once per minute.
+- CPU saturation test: 1.09% measured over 5 seconds. Scanner, cache, canonicalization and display regression tests passed.
+
 # 1.0.2
 
 - Restore the desktop even when Restart Manager cannot restart Explorer.
