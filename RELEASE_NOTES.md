@@ -1,3 +1,10 @@
+# 1.0.2
+
+- Restore the desktop even when Restart Manager cannot restart Explorer.
+- Arm an independent recovery guard before closing Explorer; verify the new desktop remains available.
+- Add recovery regression tests and portable MSI checksum generation.
+- Verified installed 1.0.2 restart, real Explorer folder sizes, scanner/cache/display regression tests, MSI validation, and Defender custom scan (no threats found).
+
 # WindowsFolderSize 1.0.0
 
 First public release for Windows 11 x64.

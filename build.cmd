@@ -30,7 +30,11 @@ if errorlevel 1 exit /b 1
 cl %COMMON% src\cache_test.cpp /Fobuild\cache_test.obj /Fedist\WindowsFolderSizeCacheTest.exe /link /DYNAMICBASE /NXCOMPAT
 if errorlevel 1 exit /b 1
 :setup
-cl %COMMON% src\maintenance.cpp build\app.res /Fobuild\maintenance.obj /Fedist\WindowsFolderSizeMaintenance.exe shell32.lib user32.lib rstrtmgr.lib /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT
+cl %COMMON% src\restart_policy_test.cpp /Fobuild\restart_policy_test.obj /Febuild\restart_policy_test.exe
+if errorlevel 1 exit /b 1
+build\restart_policy_test.exe
+if errorlevel 1 exit /b 1
+cl %COMMON% src\maintenance.cpp build\app.res /Fobuild\maintenance.obj /Fedist\WindowsFolderSizeMaintenance.exe shell32.lib user32.lib rstrtmgr.lib ole32.lib uuid.lib /link /SUBSYSTEM:WINDOWS /DYNAMICBASE /NXCOMPAT
 if errorlevel 1 exit /b 1
 if /I "%~1"=="native" exit /b 0
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-msi.ps1
