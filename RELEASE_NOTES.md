@@ -1,3 +1,10 @@
+# 1.0.8
+
+- Start the broker after repair/reinstallation as well as first installation. Previously repair stopped the broker but excluded it from the Finish action.
+- Restore parent-directory refresh notifications, coalesced to once per second, and invalidate restored cache entries on broker startup.
+- Disable Restart Manager application shutdown/restart and system reboot prompts in the MSI. Remove the old product after installing shared components. Restart Explorer only from the final optional checkbox, including repair.
+- Production broker updated without restarting Explorer. MSI validation and Defender scan passed. Interactive final-dialog behavior is not yet visually verified because Explorer is minimized; no window was activated.
+
 # 1.0.7
 
 - Index individual file sizes during the initial enumeration. Apply old/new byte deltas for file growth, addition, deletion and rename notifications.

@@ -31,7 +31,9 @@ std::mutex cacheMutex;std::condition_variable cv;std::map<std::wstring,Entry> ca
 std::wstring normalized(std::wstring p){while(p.size()>3&&p.back()==L'\\')p.pop_back();CharLowerBuffW(p.data(),DWORD(p.size()));return p;}
 bool acceptable(const std::wstring& p){return p.size()>=3&&p.size()<32000&&iswalpha(p[0])&&p[1]==L':'&&p[2]==L'\\'&&p.find(L'\0')==std::wstring::npos;}
 void queue(const std::wstring& key,Entry& e){if(!e.queued&&!e.running){e.queued=true;e.percent=0;e.error=0;pending.push_back(key);cv.notify_one();}}
-void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
+std::mutex notificationMutex;std::set<std::wstring> changedParents;
+void notify(const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);auto parent=path.substr(0,path.find_last_of(L'\\'));if(parent.size()==2)parent+=L'\\';std::lock_guard guard(notificationMutex);changedParents.insert(parent);}
+void flushNotifications(){static ULONGLONG last=0;auto now=GetTickCount64();if(now-last<1000)return;last=now;std::set<std::wstring> parents;{std::lock_guard guard(notificationMutex);parents.swap(changedParents);}for(const auto& path:parents)SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);}
 void scannerWorker(){
     SetThreadPriority(GetCurrentThread(),THREAD_PRIORITY_BELOW_NORMAL);
     struct Running {std::wstring key,path;std::unique_ptr<ScanJob> scan;FileSizes files;ULONGLONG lastNotify=0;unsigned lastPercent=101;};
@@ -109,11 +111,13 @@ int wmain(int argc,wchar_t**argv){
     if(argc>1&&wcscmp(argv[1],L"--stop")==0){HANDLE e=OpenEventW(EVENT_MODIFY_STATE,FALSE,eventName.c_str());if(e){SetEvent(e);CloseHandle(e);}return 0;}
     HANDLE stopEvent=CreateEventW(nullptr,TRUE,FALSE,eventName.c_str());
     DWORD session;ProcessIdToSessionId(GetCurrentProcessId(),&session);auto mutexName=std::wstring(L"Local\\WindowsFolderSize.Agent.")+(isolated?L"Test.":L"")+std::to_wstring(session);HANDLE mutex=CreateMutexW(nullptr,FALSE,mutexName.c_str());if(!mutex||GetLastError()==ERROR_ALREADY_EXISTS)return 0;
+    ResetEvent(stopEvent);
     if(!resolveSymbols()){log(L"Required symbols missing. No Explorer changes made.");CloseHandle(mutex);return 1;}
     if(!limitCpu()){log(L"Cannot enforce 2% CPU limit; broker stopped");return 2;}
     log(L"CPU hard cap active: 2% of system CPU");
     auto cacheFile=dataDirectory()+L"\\folder-sizes.cache";savedSizes=loadSizes(cacheFile);
     log(L"Persistent folder size cache loaded; restored values are revalidated in the background");
+    for(const auto& item:savedSizes)notify(item.first);flushNotifications();
     ULONGLONG lastSave=GetTickCount64();
     RegisterApplicationRestart(L"",RESTART_NO_CRASH|RESTART_NO_HANG);HANDLE lifecycle=CreateThread(nullptr,0,lifecycleMessages,nullptr,0,nullptr);if(lifecycle)CloseHandle(lifecycle);
     log(L"WindowsFolderSize started");std::thread worker(scannerWorker),server(pipeWorker);
@@ -122,7 +126,7 @@ int wmain(int argc,wchar_t**argv){
         // changing folders, refresh at most once every ten seconds.
         if(e.changed&&!e.running&&!e.queued&&(now-e.lastChange>=1000||now-e.finished>=1000))queue(it->first,e);
         if(!e.ready&&(e.queued||e.running)&&now-e.lastAnimation>=600){e.lastAnimation=now;animated.push_back(e.path);}
-        ++it;}}if(diskDirty&&GetTickCount64()-lastSave>=2000){SavedSizes snapshot;{std::lock_guard lock(cacheMutex);diskDirty=false;snapshot=savedSizes;}if(!saveSizes(cacheFile,snapshot))diskDirty=true;lastSave=GetTickCount64();}for(auto& path:animated)notify(path);if(WaitForSingleObject(stopEvent,200)==WAIT_OBJECT_0)stopping=true;}
+        ++it;}}if(diskDirty&&GetTickCount64()-lastSave>=2000){SavedSizes snapshot;{std::lock_guard lock(cacheMutex);diskDirty=false;snapshot=savedSizes;}if(!saveSizes(cacheFile,snapshot))diskDirty=true;lastSave=GetTickCount64();}for(auto& path:animated)notify(path);flushNotifications();if(WaitForSingleObject(stopEvent,200)==WAIT_OBJECT_0)stopping=true;}
     // Exit terminates the blocked pipe listener after the scanner has stopped.
     cv.notify_all();worker.join();{std::lock_guard lock(cacheMutex);saveSizes(cacheFile,savedSizes);}server.detach();log(L"WindowsFolderSize stopped");CloseHandle(stopEvent);CloseHandle(mutex);ExitProcess(0);
 }
