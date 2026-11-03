@@ -1,3 +1,9 @@
+# 1.0.14
+
+- Start the pinned initialization worker when Explorer loads the extension, without requiring a classic context-menu activation. Loader entry only dispatches kernel work and never waits, installs hooks, accesses files or initializes COM.
+- Restart Manager now includes all validated Windows Explorer processes in the current session so separate folder processes cannot retain an old pinned DLL. Unrelated processes and same-name test executables are excluded by the full system image path.
+- Regression: a factory-free console host reproduced inactive status0 with1.0.13 and active status1 with1.0.14. Async10000-call, numeric retention, native shell formatting and MSI ICE checks passed.
+
 # 1.0.13
 
 - Move Size-column IPC off the Explorer property thread into one low-priority, bounded-rate worker. Explorer reads a bounded memory cache with nonblocking locks and retains the caller's last snapshot during contention.

@@ -1,6 +1,7 @@
 #include "common.hpp"
 #include "restart_policy.hpp"
 #include <restartmanager.h>
+#include <tlhelp32.h>
 using namespace fsizes;
 void refreshUserRegistration(){
  const wchar_t* key=L"Software\\Classes\\CLSID\\{1A249399-E61D-4D3F-AC60-BEBBBDBBD115}\\InprocServer32";
@@ -38,7 +39,19 @@ DWORD restartExplorer(){
     CloseHandle(process);auto name=valid?wcsrchr(image,L'\\'):nullptr;if(!name||_wcsicmp(name+1,L"explorer.exe"))return ERROR_INVALID_DATA;
     app.dwProcessId=pid;app.ProcessStartTime=created;DWORD handle=0;wchar_t key[CCH_RM_SESSION_KEY+1]{};
     DWORD error=RmStartSession(&handle,0,key);if(error)return error;
-    error=RmRegisterResources(handle,0,nullptr,1,&app,0,nullptr);
+    // Separate-process folder windows can retain the old pinned DLL even
+    // after the desktop shell restarts. Register every validated Explorer
+    // image in this session, not unrelated applications or test executables.
+    std::vector<RM_UNIQUE_PROCESS> apps{app};
+    wchar_t windows[32768];GetWindowsDirectoryW(windows,32768);auto trusted=std::wstring(windows)+L"\\explorer.exe";
+    HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);PROCESSENTRY32W item{sizeof(item)};
+    if(snapshot!=INVALID_HANDLE_VALUE){if(Process32FirstW(snapshot,&item))do{
+        DWORD otherSession=0;if(item.th32ProcessID==pid||_wcsicmp(item.szExeFile,L"explorer.exe")||!ProcessIdToSessionId(item.th32ProcessID,&otherSession)||otherSession!=session)continue;
+        HANDLE other=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,item.th32ProcessID);if(!other)continue;
+        wchar_t path[32768];DWORD length=32768;FILETIME start{},finish{},k{},u{};
+        if(QueryFullProcessImageNameW(other,0,path,&length)&&!_wcsicmp(path,trusted.c_str())&&GetProcessTimes(other,&start,&finish,&k,&u)){RM_UNIQUE_PROCESS extra{};extra.dwProcessId=item.th32ProcessID;extra.ProcessStartTime=start;apps.push_back(extra);}CloseHandle(other);
+    }while(Process32NextW(snapshot,&item));CloseHandle(snapshot);}
+    error=RmRegisterResources(handle,0,nullptr,DWORD(apps.size()),apps.data(),0,nullptr);
     if(error){RmEndSession(handle);return error;}
     // Arm recovery before asking Explorer to exit. The guard survives this
     // helper exiting and never shuts down or kills any application itself.
