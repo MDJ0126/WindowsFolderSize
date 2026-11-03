@@ -1,3 +1,8 @@
+# 1.0.15
+
+- Reduce the loader entry path buffer from 64 KiB to MAX_PATH. Actual Explorer crash events identified the stack-probe offset in 1.0.14. A 64 KiB loader-thread regression returned DLL initialization error 1114 before this fix and succeeded after it.
+- Installed on the QA machine: MSI exit 0, matching installed/build DLL hashes, and both Explorer processes loaded 1.0.15. No new Explorer crash event was recorded in the observed post-install interval.
+- Live automatic Size-column display and interaction QA are still pending: the user resumed computer use before those checks passed. Native regression success is not a substitute for that GUI verification.
 # 1.0.14
 
 - Start the pinned initialization worker when Explorer loads the extension, without requiring a classic context-menu activation. Loader entry only dispatches kernel work and never waits, installs hooks, accesses files or initializes COM.

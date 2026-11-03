@@ -124,14 +124,14 @@ public:
 };
 STDAPI DllGetClassObject(REFCLSID clsid,REFIID iid,void**p){
     if(clsid!=extensionClsid)return CLASS_E_CLASSNOTAVAILABLE;
-    wchar_t image[32768];GetModuleFileNameW(nullptr,image,32768);auto file=wcsrchr(image,L'\\');if(file&&_wcsicmp(file+1,L"explorer.exe")==0)WindowsFolderSizeInitialize();
+    wchar_t image[MAX_PATH]{};GetModuleFileNameW(nullptr,image,MAX_PATH);auto file=wcsrchr(image,L'\\');if(file&&_wcsicmp(file+1,L"explorer.exe")==0)WindowsFolderSizeInitialize();
     auto factory=new Factory;HRESULT hr=factory->QueryInterface(iid,p);factory->Release();return hr;
 }
 STDAPI DllCanUnloadNow(){return hookStatus==1||references?S_FALSE:S_OK;}
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID){
     if(reason==DLL_PROCESS_ATTACH){
         DisableThreadLibraryCalls(instance);
-        wchar_t image[32768];GetModuleFileNameW(nullptr,image,32768);auto file=wcsrchr(image,L'\\');
+        wchar_t image[MAX_PATH]{};GetModuleFileNameW(nullptr,image,MAX_PATH);auto file=wcsrchr(image,L'\\');
         // Only dispatch the existing pinned worker here. Never wait, access
         // files, initialize COM or install hooks while holding loader lock.
         // Explorer may load an overlay DLL before requesting its COM factory.
