@@ -74,10 +74,12 @@ The source includes tests for resumable scans, progress formatting through the n
 
 ## How it works
 
-A native background broker records each file path and size in a checksummed disk index. Normal file edits apply only the old/new size difference; deleted subtrees subtract their cached entries, and paired directory renames reuse the existing index. Small change journals are appended instead of rewriting the entire index on every edit. Normal updates keep the numeric size visible. Animation is reserved for initial enumeration and recovery after lost notifications, a damaged index, or an unwatched period such as a broker restart. Restart recovery validates offline changes before treating the saved index as current. Completed indexes remain watched until cache capacity requires eviction. The broker retains its 2% CPU hard cap. An Explorer COM extension retrieves cached totals and formats pending scan values in the standard Size column. Microsoft public symbols resolve the Explorer hooks for the installed Windows build.
+A native background broker stores per-file paths and sizes in the Windows SQLite disk B-tree, using a 2 MiB page cache with memory mapping disabled. Normal edits apply size differences, subtree deletion subtracts indexed entries, and directory renames update indexed paths. Initial and recovery scans use disk staging rather than a second in-memory file map. At most two folder scans run concurrently; pending changes are bounded, scan slices yield, and the broker has a 1% system CPU scheduler cap. Animation is reserved for initial calculation and recovery. Existing binary indexes are preserved; the new database requires one initial validation. The page-cache setting is not a total-process memory ceiling. An Explorer COM extension retrieves cached totals and formats pending values in the standard Size column. Microsoft public symbols resolve the Explorer hooks for the installed Windows build.
 
 ## License and credits
 
 **GPL-3.0-or-later.** See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md).
 
 Thanks to m417z for the documented Explorer hook ABI/cache behavior and to the MinHook contributors. The folder-and-chart icon in `assets/` was created for this project and is included under the project license.
+
+Resource regression: scripts\\test-resources.cmd compares 150,000 records; scripts\\test-resources-quick.cmd checks persistence and real file deltas; scripts\\test-broker-resources.cmd executes the production scanner worker without a GUI or Explorer restart.
