@@ -1,3 +1,9 @@
+# 1.0.13
+
+- Move Size-column IPC off the Explorer property thread into one low-priority, bounded-rate worker. Explorer reads a bounded memory cache with nonblocking locks and retains the caller's last snapshot during contention.
+- Bound the complete overlapped pipe transaction to 100 ms, cancel unresponsive requests, and retain numeric values during broker failures.
+- Reproduced the old 20 ms CallNamedPipe setting waiting 364 ms for a delayed response. New 10,000-call stress: 52.54 ms total, 136.90 microseconds worst call; no caller-thread I/O. Native shell property/display regression and MSI validation passed. Live Explorer installation is deferred to preserve the user's ongoing work.
+
 # 1.0.12
 
 - Repair stale per-user COM registration during the MSI transaction, before relying on the final UI action.

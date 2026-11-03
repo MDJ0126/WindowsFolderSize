@@ -36,7 +36,7 @@ int wmain(int argc,wchar_t**argv){
         if(FAILED(SHParseDisplayName(argv[1],nullptr,&parent,0,nullptr))||FAILED(SHBindToObject(nullptr,parent,nullptr,IID_PPV_ARGS(&sf)))||FAILED(sf->ParseDisplayName(nullptr,nullptr,argv[2],&eaten,&child,&attrs)))return 7;
         IPropertyDescription* description=nullptr;if(FAILED(PSGetPropertyDescription(PKEY_Size,IID_PPV_ARGS(&description))))return 8;
         for(unsigned p: {100u,0u,37u,99u,101u,102u}){
-            phase=p;VARIANT value{};HRESULT hr=sf->GetDetailsEx(child,&PKEY_Size,&value);
+            phase=p;VARIANT value{};HRESULT hr=E_FAIL;for(unsigned retry=0;retry<200;retry++){VariantClear(&value);hr=sf->GetDetailsEx(child,&PKEY_Size,&value);if(SUCCEEDED(hr)&&value.vt==VT_UI8&&((p==102&&value.ullVal==4236)||(p!=102&&value.ullVal>=pendingSizeBase&&unsigned(value.ullVal-pendingSizeBase)%128==p)))break;Sleep(10);}
             if(FAILED(hr)||value.vt!=VT_UI8){printf("Shell value failed phase=%u hr=%08lx type=%u\n",p,hr,value.vt);return 9;}
             PROPVARIANT canonical{};InitPropVariantFromUInt64(value.ullVal,&canonical);VariantClear(&value);
             if(FAILED(description->CoerceToCanonicalValue(&canonical)))return 10;
@@ -45,7 +45,7 @@ int wmain(int argc,wchar_t**argv){
             if(FAILED(hr)||!text||!*text||(p!=102&&expected!=text)){printf("Shell display failed phase=%u hr=%08lx\n",p,hr);return 13;}
             printf("PASS real folder -> shell property -> canonical conversion -> COM display: phase %u\n",p);CoTaskMemFree(text);PropVariantClear(&canonical);
         }
-        phase=37;bool columnFound=false;
+        phase=37;for(unsigned retry=0;retry<200;retry++){VARIANT value{};sf->GetDetailsEx(child,&PKEY_Size,&value);bool ready=value.vt==VT_UI8&&value.ullVal>=pendingSizeBase&&unsigned(value.ullVal-pendingSizeBase)%128==37;VariantClear(&value);if(ready)break;Sleep(10);}bool columnFound=false;
         for(UINT column=0;column<100;column++){
             PROPERTYKEY key{};if(FAILED(sf->MapColumnToSCID(column,&key)))break;
             if(key.pid!=PKEY_Size.pid||!IsEqualGUID(key.fmtid,PKEY_Size.fmtid))continue;

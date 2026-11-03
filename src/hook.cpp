@@ -2,6 +2,7 @@
 // m417z's GPL-3.0 Better file sizes in Explorer details (version 1.6).
 // This project is distributed under GPL-3.0-or-later. See THIRD_PARTY.md.
 #include "common.hpp"
+#include "async_size_cache.hpp"
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <propvarutil.h>
@@ -20,6 +21,7 @@ using DescriptionFormatFn=HRESULT(STDMETHODCALLTYPE*)(IPropertyDescription*,REFP
 DescriptionFormatFn originalDescriptionFormat=nullptr;
 thread_local bool readingSize=false,insideSize=false;
 volatile LONG hookStatus=0;
+AsyncSizeCache* asyncSizes=nullptr;
 extern "C" __declspec(dllexport) LONG WindowsFolderSizeHookStatus(){return InterlockedCompareExchange(&hookStatus,0,0);}
 bool isSize(const PROPERTYKEY* key){return key&&key->pid==sizeKey.pid&&IsEqualGUID(key->fmtid,sizeKey.fmtid);}
 bool pendingDisplay(REFPROPVARIANT value,std::wstring& text){return value.vt==VT_UI8&&pendingSizeText(value.uhVal.QuadPart,text);}
@@ -38,10 +40,7 @@ HRESULT STDMETHODCALLTYPE descriptionFormat(IPropertyDescription* description,RE
 }
 bool query(const std::wstring& path,Response& response){
     if(path.size()<3||path.size()>=32000||path[1]!=L':')return false;
-    Request req;req.characters=uint32_t(path.size());std::vector<BYTE> data(sizeof(req)+path.size()*sizeof(wchar_t));memcpy(data.data(),&req,sizeof(req));memcpy(data.data()+sizeof(req),path.data(),path.size()*sizeof(wchar_t));
-    DWORD n=0;auto name=sessionPipe();
-    if(!CallNamedPipeW(name.c_str(),data.data(),DWORD(data.size()),&response,sizeof(response),&n,20))return false;
-    return n==sizeof(response)&&response.magicValue==progressMagic;
+    return asyncSizes&&asyncSizes->read(path,response);
 }
 HRESULT WINAPI getSize(void* object,const ITEMID_CHILD* child,const void* folder,PROPVARIANT* value){
     HRESULT hr=originalSize(object,child,folder,value);
@@ -85,7 +84,8 @@ DWORD WINAPI initialize(void*){
     if(description)description->Release();if(SUCCEEDED(com))CoUninitialize();
     if(!formatting){MH_Uninitialize();log(L"Progress formatter hooks unavailable; no size hooks enabled");InterlockedExchange(&hookStatus,-1);return 7;}
     HMODULE self=nullptr;GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,reinterpret_cast<LPCWSTR>(initialize),&self);
-    if(MH_EnableHook(MH_ALL_HOOKS)!=MH_OK){log(L"Explorer hook activation failed");return 6;}
+    asyncSizes=new AsyncSizeCache([](const std::wstring& path,Response& response){return boundedSizeQuery(path,response);},[](const std::wstring& path){SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path.c_str(),nullptr);});
+    if(MH_EnableHook(MH_ALL_HOOKS)!=MH_OK){delete asyncSizes;asyncSizes=nullptr;log(L"Explorer hook activation failed");return 6;}
     InterlockedExchange(&hookStatus,1);log(L"WindowsFolderSize Explorer hooks active");return 0;
 }
 INIT_ONCE started=INIT_ONCE_STATIC_INIT;
