@@ -13,7 +13,7 @@ if /I "%~1"=="broker" goto broker
 cl %COMMON% /c third_party\minhook\src\buffer.c third_party\minhook\src\hook.c third_party\minhook\src\trampoline.c third_party\minhook\src\hde\hde64.c /Fobuild\
 if errorlevel 1 exit /b 1
 :broker
-cl %COMMON% src\agent.cpp build\app.res /Fobuild\agent.obj /Febuild\bin\WindowsFolderSize.exe shell32.lib advapi32.lib user32.lib ole32.lib uuid.lib /link /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup /DYNAMICBASE /NXCOMPAT
+cl %COMMON% src\agent.cpp build\app.res /Fobuild\agent.obj /Febuild\bin\WindowsFolderSize.exe shell32.lib advapi32.lib user32.lib ole32.lib uuid.lib winsqlite3.lib /link /SUBSYSTEM:WINDOWS /ENTRY:wmainCRTStartup /DYNAMICBASE /NXCOMPAT
 if errorlevel 1 exit /b 1
 if /I "%~1"=="broker" exit /b 0
 rc /nologo /fo build\hook.res src\hook.rc

@@ -1,3 +1,9 @@
+# 1.0.16
+
+- Keep per-file records in the Windows SQLite disk B-tree with a 2 MiB page cache, mmap disabled and file-backed temporary storage. Scans no longer restore a full map while building a second copy. Existing binary indexes are preserved; the new database needs one initial validation scan.
+- Limit active scans to two, retain priority processing of normal arithmetic deltas, bound pending notifications to 4096, yield between scan slices, reduce idle polling and lower the broker CPU scheduler cap from 2% to 1% of the system.
+- A 150,000-record fixture reduced peak working set from 116,002,816 to 9,302,016 bytes (92.0%). New-case average CPU was 0.729% of system capacity. These are isolated fixture results, not a process-memory ceiling or a claim about the live Explorer UI. Installation remains deferred while the user uses the computer.
+
 # 1.0.15
 
 - Reduce the loader entry path buffer from 64 KiB to MAX_PATH. Actual Explorer crash events identified the stack-probe offset in 1.0.14. A 64 KiB loader-thread regression returned DLL initialization error 1114 before this fix and succeeded after it.
