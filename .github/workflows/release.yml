@@ -1,0 +1,24 @@
+name: Publish verified installer
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frozen installer
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cd dist
+          sha256sum -c "SHA256SUMS-${version}.txt"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "dist/WindowsFolderSize-${version}-x64.msi" "dist/SHA256SUMS-${version}.txt" --verify-tag --title "WindowsFolderSize ${version}" --notes-file docs/latest-release.md
